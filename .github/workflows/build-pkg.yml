@@ -31,9 +31,23 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Unit tests (parser/sema/exec)
-        run: cargo test --lib
+        run: |
+          set +e
+          cargo test --lib 2>&1 | tee /tmp/cargo-test.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E "error(\[|:)" /tmp/cargo-test.log | head -50 | sed 's/^/::error::/'
+            exit "$code"
+          fi
       - name: Build WASM package
-        run: wasm-pack build --release --target web --out-dir pkg
+        run: |
+          set +e
+          wasm-pack build --release --target web --out-dir pkg 2>&1 | tee /tmp/wasmpack.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E "error(\[|:)" /tmp/wasmpack.log | head -50 | sed 's/^/::error::/'
+            exit "$code"
+          fi
       - name: Push generated package back to the branch
         run: |
           git config user.name "github-actions[bot]"
