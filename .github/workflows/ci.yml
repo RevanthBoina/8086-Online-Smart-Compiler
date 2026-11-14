@@ -79,7 +79,13 @@ jobs:
         working-directory: webapp
         env:
           CI: true
-        run: npx react-app-rewired test
+        run: |
+          set -o pipefail
+          npx react-app-rewired test 2>&1 | tee /tmp/jest.log || {
+            grep -E "✕|●" /tmp/jest.log | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
+          grep -E "Tests:" /tmp/jest.log | tail -1 | sed 's/^/::notice::/'
 
       - name: Frontend production build
         working-directory: webapp
@@ -87,11 +93,29 @@ jobs:
           CI: true
         run: npm run build
 
-      - name: Engine regression suite (44 checks)
-        run: node tests/engine.test.mjs
+      - name: Engine regression suite
+        run: |
+          set -o pipefail
+          node tests/engine.test.mjs 2>&1 | tee /tmp/engine.log || {
+            grep -E "FAIL" /tmp/engine.log | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
+          grep -E "^(PASS|FAIL):" /tmp/engine.log | tail -1 | sed 's/^/::notice::/'
 
       - name: Intel/MASM acceptance suite
-        run: node tests/intel8086.test.mjs
+        run: |
+          set -o pipefail
+          node tests/intel8086.test.mjs 2>&1 | tee /tmp/intel.log || {
+            grep -E "FAIL" /tmp/intel.log | head -30 | sed 's/^/::error::/'
+            exit 1
+          }
+          grep -E "^(PASS|FAIL):" /tmp/intel.log | tail -1 | sed 's/^/::notice::/'
 
       - name: Static hosting / deep-link suite
-        run: node tests/static.test.mjs
+        run: |
+          set -o pipefail
+          node tests/static.test.mjs 2>&1 | tee /tmp/static.log || {
+            grep -E "FAIL" /tmp/static.log | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
+          grep -E "^(PASS|FAIL):" /tmp/static.log | tail -1 | sed 's/^/::notice::/'
