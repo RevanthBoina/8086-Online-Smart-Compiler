@@ -48,9 +48,19 @@ export default function StackInspector({ memory = [], liveRegisters = {} }) {
   const current = state.currentIndex >= 0 ? state.history[state.currentIndex] : null;
   const regs = (current && current.registers) || liveRegisters || {};
 
-  const ss = regs.SS || 0;
-  const sp = regs.SP || 0xfffe;
+  const ss = regs.SS !== undefined ? regs.SS : 0;
+  const sp = regs.SP !== undefined ? regs.SP : 0;
   const physicalSP = calculatePhysicalAddress(ss, sp);
+
+  // The RAM table is a grid of 16-byte rows; flatten it once so stack words
+  // can be looked up by physical address.
+  const flatMemory = React.useMemo(() => {
+    if (!memory || memory.length === 0) return [];
+    if (Array.isArray(memory[0])) {
+      return memory.reduce((acc, row) => acc.concat(row), []);
+    }
+    return memory;
+  }, [memory]);
 
   // Read stack entries around SP (e.g. from SP down or around SP)
   // Stack entries (words, little-endian)
@@ -60,8 +70,9 @@ export default function StackInspector({ memory = [], liveRegisters = {} }) {
     const physAddr = calculatePhysicalAddress(ss, wordSP);
     
     // Read 2 bytes in memory (little-endian: low byte at physAddr, high byte at physAddr + 1)
-    const lowByte = memory[physAddr] !== undefined ? memory[physAddr] : 0;
-    const highByte = memory[physAddr + 1] !== undefined ? memory[physAddr + 1] : 0;
+    const lowByte = flatMemory[physAddr] !== undefined ? flatMemory[physAddr] : 0;
+    const highByte =
+      flatMemory[physAddr + 1] !== undefined ? flatMemory[physAddr + 1] : 0;
     const wordVal = ((highByte << 8) | lowByte) & 0xffff;
 
     stackEntries.push({
@@ -107,8 +118,8 @@ export default function StackInspector({ memory = [], liveRegisters = {} }) {
               <TableCell>Role</TableCell>
               <TableCell>Segment:Offset</TableCell>
               <TableCell>20-Bit Physical</TableCell>
-              <TableCell align="right">Low Byte (SP+0)</TableCell>
-              <TableCell align="right">High Byte (SP+1)</TableCell>
+              <TableCell align="right">Low Byte</TableCell>
+              <TableCell align="right">High Byte</TableCell>
               <TableCell align="right">Word Value</TableCell>
             </TableRow>
           </TableHead>

@@ -80,9 +80,8 @@ function Navbar() {
     }
   };
 
-  const pUrl = process.env.PUBLIC_URL || "";
-  const goToCompile = () => history.push(pUrl ? `${pUrl}/compile` : "/compile");
-  const goToHelp = () => history.push(pUrl ? `${pUrl}/instructions` : "/instructions");
+  const goToCompile = () => history.push("/compile");
+  const goToHelp = () => history.push("/instructions");
 
   return (
     <div className={classes.root}>

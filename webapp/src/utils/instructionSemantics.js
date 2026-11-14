@@ -1,4 +1,52 @@
-import { toHex4 } from './numberFormat';
+import { toHex4, toHex2 } from './numberFormat';
+
+const BYTE_PARENT = {
+  AH: 'AX', AL: 'AX',
+  BH: 'BX', BL: 'BX',
+  CH: 'CX', CL: 'CX',
+  DH: 'DX', DL: 'DX',
+};
+const WORD_REGS = [
+  'AX', 'BX', 'CX', 'DX', 'SI', 'DI', 'SP', 'BP',
+  'CS', 'DS', 'SS', 'ES', 'IP',
+];
+
+function isByteToken(token) {
+  return Object.prototype.hasOwnProperty.call(
+    BYTE_PARENT,
+    String(token || '').trim().toUpperCase()
+  );
+}
+
+/** Read a register (16-bit or 8-bit alias) from a snapshot register map. */
+function readRegister(regs, token) {
+  if (!regs || !token) return undefined;
+  const up = String(token).trim().toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(BYTE_PARENT, up)) {
+    const word = regs[BYTE_PARENT[up]];
+    if (word === undefined) return undefined;
+    return up[1] === 'H' ? (word >> 8) & 0xff : word & 0xff;
+  }
+  if (WORD_REGS.indexOf(up) >= 0) {
+    const v = regs[up];
+    return v === undefined ? undefined : v & 0xffff;
+  }
+  return undefined;
+}
+
+/**
+ * Render an operand as it is observed in `regs`: registers show their real
+ * value with the right width, immediates/labels are echoed verbatim.
+ */
+function formatOperand(regs, token) {
+  if (token === undefined || token === null || token === '') return '';
+  const up = String(token).trim().toUpperCase();
+  const value = readRegister(regs, up);
+  if (value !== undefined) {
+    return isByteToken(up) ? toHex2(value) : toHex4(value);
+  }
+  return up;
+}
 
 export const FLAG_NAMES = {
   CF: 'Carry Flag (unsigned overflow/borrow)',
@@ -85,17 +133,13 @@ export function generateExplanation(current, prev) {
   const flags = current.flags || {};
   const prevFlags = prev ? prev.flags || {} : flags;
 
-  const destVal = regs[dest] !== undefined ? toHex4(regs[dest]) : (regs.AX !== undefined ? toHex4(regs.AX) : '0000h');
-  const prevDestVal = prevRegs[dest] !== undefined ? toHex4(prevRegs[dest]) : destVal;
+  // Real values from the snapshots — never substituted with AX as a fallback.
+  const destVal = formatOperand(regs, dest);
+  const prevDestVal = formatOperand(prevRegs, dest) || destVal;
+  const srcVal = formatOperand(regs, src) || formatOperand(prevRegs, src);
 
-  let srcVal = '';
-  if (src) {
-    if (regs[src] !== undefined) {
-      srcVal = toHex4(regs[src]);
-    } else {
-      srcVal = src.replace(/h$/i, '').toUpperCase() + 'h';
-    }
-  }
+  // Width of the executed operation, taken from the destination register.
+  const opIsByte = isByteToken(dest);
 
   // Detect which flags actually flipped
   const flagChanges = [];
@@ -159,20 +203,101 @@ export function generateExplanation(current, prev) {
         why: 'ALU subtracted 1 from destination. Note: DEC updates ZF, SF, OF, but preserves the Carry Flag (CF).',
       };
 
-    case 'MUL':
+    case 'MUL': {
+      const byteOp = isByteToken(dest);
+      const al = readRegister(regs, 'AL');
+      const ax = readRegister(regs, 'AX');
+      const dx = readRegister(regs, 'DX');
+      const prevAl = readRegister(prevRegs, 'AL');
+      const prevAx = readRegister(prevRegs, 'AX');
       return {
         title: `MUL ${dest || 'operand'}`,
-        what: `Unsigned multiplication by ${dest || 'operand'}.`,
-        changes: `AX = ${toHex4(regs.AX)}, DX = ${toHex4(regs.DX)}. CF=${flags.CF ? 1 : 0}, OF=${flags.OF ? 1 : 0}.`,
-        why: 'ALU multiplied AX by the source operand. 16-bit multiplication places upper 16 bits in DX and lower 16 bits in AX.',
+        what: byteOp
+          ? `Unsigned byte multiplication: AL (${toHex2(prevAl)}) × ${dest}.`
+          : `Unsigned word multiplication: AX (${toHex4(prevAx)}) × ${dest}.`,
+        changes: byteOp
+          ? `Product placed in AX = ${toHex4(ax)} (AL=${toHex2(al & 0xff)}, AH=${toHex2((ax >> 8) & 0xff)}). CF=${flags.CF ? 1 : 0}, OF=${flags.OF ? 1 : 0}.`
+          : `Product placed in DX:AX = ${toHex4(dx)}:${toHex4(ax)}. CF=${flags.CF ? 1 : 0}, OF=${flags.OF ? 1 : 0}.`,
+        why: byteOp
+          ? 'An 8-bit MUL always multiplies AL by its operand and stores the 16-bit result in AX.'
+          : 'A 16-bit MUL always multiplies AX by its operand and stores the 32-bit result in DX:AX.',
       };
+    }
 
-    case 'DIV':
+    case 'DIV': {
+      const byteOp = isByteToken(dest);
+      const ax = readRegister(regs, 'AX');
+      const dx = readRegister(regs, 'DX');
       return {
         title: `DIV ${dest || 'operand'}`,
-        what: `Unsigned division by ${dest || 'operand'}.`,
-        changes: `Quotient in AX = ${toHex4(regs.AX)}, Remainder in DX = ${toHex4(regs.DX)}.`,
-        why: 'ALU divided DX:AX by operand. Arithmetic flags are undefined following DIV.',
+        what: byteOp
+          ? `Unsigned byte division: AX (${toHex4(ax)}) ÷ ${dest}.`
+          : `Unsigned word division: DX:AX (${toHex4(dx)}:${toHex4(ax)}) ÷ ${dest}.`,
+        changes: byteOp
+          ? `Quotient in AL = ${toHex2(ax & 0xff)}, remainder in AH = ${toHex2((ax >> 8) & 0xff)}.`
+          : `Quotient in AX = ${toHex4(ax)}, remainder in DX = ${toHex4(dx)}.`,
+        why: byteOp
+          ? 'An 8-bit DIV divides AX by its operand: AL receives the quotient and AH the remainder.'
+          : 'A 16-bit DIV divides DX:AX by its operand: AX receives the quotient and DX the remainder. Arithmetic flags are undefined after DIV.',
+      };
+    }
+
+    case 'ADC':
+      return {
+        title: `ADC ${dest}, ${src}`,
+        what: `Added ${srcVal || src} and the Carry Flag to ${dest}.`,
+        changes: `${dest} changed from ${prevDestVal} to ${destVal}. ${flagStatusStr}.`,
+        why: `Add-with-carry computed by the ALU (dest + src + CF). ${flagChangeStr}`,
+      };
+
+    case 'SBB':
+      return {
+        title: `SBB ${dest}, ${src}`,
+        what: `Subtracted ${srcVal || src} and the Carry Flag from ${dest}.`,
+        changes: `${dest} changed from ${prevDestVal} to ${destVal}. ${flagStatusStr}.`,
+        why: `Subtract-with-borrow computed by the ALU (dest - src - CF). ${flagChangeStr}`,
+      };
+
+    case 'TEST':
+      return {
+        title: `TEST ${dest}, ${src}`,
+        what: `Bitwise AND of ${dest} and ${srcVal || src} without storing the result.`,
+        changes: `${dest} unchanged (${destVal}). Flags updated: ${flagStatusStr}.`,
+        why: 'TEST only updates flags (CF and OF are cleared); no destination value is written.',
+      };
+
+    case 'SHL':
+    case 'SHR':
+    case 'SAR':
+      return {
+        title: `${mnemonic} ${dest}, ${src}`,
+        what: `Shifted ${dest} ${mnemonic === 'SHL' ? 'left' : 'right'} by ${srcVal || src} position(s).`,
+        changes: `${dest} changed from ${prevDestVal} to ${destVal}. ${flagStatusStr}.`,
+        why: `${mnemonic} moves bits through the Carry Flag; CF ends up holding the last bit shifted out.`,
+      };
+
+    case 'NEG':
+      return {
+        title: `NEG ${dest}`,
+        what: `Two's complement negation of ${dest}.`,
+        changes: `${dest} changed from ${prevDestVal} to ${destVal}. ${flagStatusStr}.`,
+        why: 'NEG computes 0 - operand. CF is set when the operand was not zero.',
+      };
+
+    case 'CALL':
+      return {
+        title: `CALL ${dest}`,
+        what: `Called subroutine at ${dest}.`,
+        changes: `Return address pushed onto the stack; SP is now ${toHex4(regs.SP)}.`,
+        why: 'CALL pushes the address of the next instruction so RET can resume execution there.',
+      };
+
+    case 'RET':
+      return {
+        title: 'RET',
+        what: 'Returned from a subroutine.',
+        changes: `Return address popped from the stack; SP is now ${toHex4(regs.SP)}.`,
+        why: 'RET pops the address that CALL pushed and continues execution from it.',
       };
 
     case 'AND':
@@ -270,17 +395,23 @@ export function generateExplanation(current, prev) {
     case 'PUSH':
       return {
         title: `PUSH ${dest}`,
-        what: `Pushed ${dest} onto the stack.`,
-        changes: `SP decremented by 2 (now ${toHex4(regs.SP)}). Word ${destVal} written to SS:SP.`,
-        why: '8086 stack grows downward in memory towards lower addresses.',
+        what: `Pushed ${dest} (${destVal || 'value'}) onto the stack.`,
+        changes: `SP changed from ${toHex4(prevRegs.SP)} to ${toHex4(
+          regs.SP
+        )}. The word was written at SS:SP = ${toHex4(regs.SS)}:${toHex4(
+          regs.SP
+        )}.`,
+        why: 'The 8086 stack grows downward: PUSH subtracts 2 from SP before storing the word at SS:SP.',
       };
 
     case 'POP':
       return {
         title: `POP ${dest}`,
-        what: `Popped word from the stack into ${dest}.`,
-        changes: `${dest} loaded with ${destVal}. SP incremented by 2 (now ${toHex4(regs.SP)}).`,
-        why: '8086 stack shrinks upward when popped.',
+        what: `Popped the word at SS:SP into ${dest}.`,
+        changes: `${dest} now holds ${destVal || 'the popped value'} (was ${prevDestVal}). SP changed from ${toHex4(
+          prevRegs.SP
+        )} to ${toHex4(regs.SP)}.`,
+        why: 'The 8086 stack shrinks upward: POP reads the word at SS:SP and then adds 2 to SP.',
       };
 
     case 'INT':
@@ -303,7 +434,11 @@ export function generateExplanation(current, prev) {
       return {
         title: raw,
         what: `Executed: ${raw}`,
-        changes: `Registers: ${dest ? `${dest}=${destVal}` : 'State updated'}. ${flagStatusStr}.`,
+        changes: dest
+          ? `${dest} (${opIsByte ? 8 : 16}-bit) = ${
+              destVal || 'state updated'
+            }. ${flagStatusStr}.`
+          : `State updated. ${flagStatusStr}.`,
         why: 'State updated according to 8086 interpreter rules.',
       };
   }

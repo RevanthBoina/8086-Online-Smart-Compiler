@@ -1,6 +1,8 @@
-use lib8086::util::data_util::{get_byte_reg, ByteReg};
-use lib8086::VM;
-use lib8086::{get_flag_state, Flags};
+// JS-facing register/flag snapshots. Field names are part of the frontend
+// contract (compiler.js reads reg.ah...es and flg.iflag) and must not change.
+
+use crate::exec::{Cpu, AF, CF, DF, IF, OF, PF, SF, TF, ZF};
+use crate::frontend::ast::{Reg, R8};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -35,36 +37,36 @@ pub struct JSReg {
     pub es: u16,
 }
 
-pub fn get_flags(vm: &VM) -> JSFlags {
+pub fn get_flags(cpu: &Cpu) -> JSFlags {
     JSFlags {
-        of: get_flag_state(vm.arch.flag, Flags::OVERFLOW) as u8,
-        df: get_flag_state(vm.arch.flag, Flags::DIRECTION) as u8,
-        iflag: get_flag_state(vm.arch.flag, Flags::INTERRUPT) as u8,
-        tf: get_flag_state(vm.arch.flag, Flags::TRAP) as u8,
-        sf: get_flag_state(vm.arch.flag, Flags::SIGN) as u8,
-        zf: get_flag_state(vm.arch.flag, Flags::ZERO) as u8,
-        af: get_flag_state(vm.arch.flag, Flags::AUX_CARRY) as u8,
-        pf: get_flag_state(vm.arch.flag, Flags::PARITY) as u8,
-        cf: get_flag_state(vm.arch.flag, Flags::CARRY) as u8,
+        of: u8::from(cpu.flag(OF)),
+        df: u8::from(cpu.flag(DF)),
+        iflag: u8::from(cpu.flag(IF)),
+        tf: u8::from(cpu.flag(TF)),
+        sf: u8::from(cpu.flag(SF)),
+        zf: u8::from(cpu.flag(ZF)),
+        af: u8::from(cpu.flag(AF)),
+        pf: u8::from(cpu.flag(PF)),
+        cf: u8::from(cpu.flag(CF)),
     }
 }
 
-pub fn get_reg(vm: &VM) -> JSReg {
-    return JSReg {
-        ah: get_byte_reg(vm, ByteReg::AH),
-        al: get_byte_reg(vm, ByteReg::AL),
-        bh: get_byte_reg(vm, ByteReg::BH),
-        bl: get_byte_reg(vm, ByteReg::BL),
-        ch: get_byte_reg(vm, ByteReg::CH),
-        cl: get_byte_reg(vm, ByteReg::CL),
-        dh: get_byte_reg(vm, ByteReg::DH),
-        dl: get_byte_reg(vm, ByteReg::DL),
-        si: vm.arch.si,
-        di: vm.arch.di,
-        bp: vm.arch.bp,
-        sp: vm.arch.sp,
-        ss: vm.arch.ss,
-        ds: vm.arch.ds,
-        es: vm.arch.es,
-    };
+pub fn get_reg(cpu: &Cpu) -> JSReg {
+    JSReg {
+        ah: cpu.r8(R8::AH),
+        al: cpu.r8(R8::AL),
+        bh: cpu.r8(R8::BH),
+        bl: cpu.r8(R8::BL),
+        ch: cpu.r8(R8::CH),
+        cl: cpu.r8(R8::CL),
+        dh: cpu.r8(R8::DH),
+        dl: cpu.r8(R8::DL),
+        si: cpu.r16(Reg::SI),
+        di: cpu.r16(Reg::DI),
+        bp: cpu.r16(Reg::BP),
+        sp: cpu.r16(Reg::SP),
+        ss: cpu.r16(Reg::SS),
+        ds: cpu.r16(Reg::DS),
+        es: cpu.r16(Reg::ES),
+    }
 }

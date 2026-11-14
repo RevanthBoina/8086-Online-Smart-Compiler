@@ -4,8 +4,14 @@
 
 An interactive, educational 8086 CPU execution workspace designed for Computer Organization & Architecture (COA) students and learners.
 
-Repository: [https://github.com/RevanthBoina/coa-8086](https://github.com/RevanthBoina/coa-8086)  
-Upstream Engine: [https://github.com/YJDoc2/8086-Emulator](https://github.com/YJDoc2/8086-Emulator)
+Repository: [https://github.com/RevanthBoina/8086-Online-Smart-Compiler](https://github.com/RevanthBoina/8086-Online-Smart-Compiler)  
+Live site: [https://revanthboina.github.io/8086-Online-Smart-Compiler/](https://revanthboina.github.io/8086-Online-Smart-Compiler/)
+
+**Underlying engine:** the interpreter and preprocessor are provided by the
+upstream [YJDoc2/8086-Emulator](https://github.com/YJDoc2/8086-Emulator)
+project, compiled to WebAssembly and embedded in this application. The
+upstream project is the engine source — this repository is where you write,
+run and study assembly programs.
 
 ---
 
@@ -32,9 +38,10 @@ Upstream Engine: [https://github.com/YJDoc2/8086-Emulator](https://github.com/YJ
 - **Rust toolchain:** `rustc`, `cargo`, `wasm-pack` (if building WASM from source)
 
 ### Building and Running
-1. **Build the WASM Driver (if modifying Rust engine):**
+1. **Build the WASM Driver** (required before installing frontend
+   dependencies, because `webapp/package.json` references `file:../pkg`):
    ```sh
-   wasm-pack build --target web --out-dir pkg
+   wasm-pack build --release --target web --out-dir pkg
    ```
 2. **Start the Frontend:**
    ```sh
@@ -42,13 +49,22 @@ Upstream Engine: [https://github.com/YJDoc2/8086-Emulator](https://github.com/YJ
    npm install
    npm start
    ```
-   The application will open at `http://localhost:3000/8086-emulator-web/compile`.
+   The application opens at `http://localhost:3000/` and the compiler at
+   `http://localhost:3000/compile`.
 
 3. **Build for Production:**
    ```sh
    cd webapp
    npm run build
    ```
+
+### Deployment
+
+`.github/workflows/deploy.yml` builds the Rust crate with `wasm-pack`,
+installs the webapp dependencies against the generated `pkg/`, builds the
+React bundle, copies `index.html` to `404.html` (SPA fallback for direct
+navigation) and deploys `webapp/build/` to GitHub Pages on every push to
+`master`/`main`.
 
 ---
 
@@ -92,7 +108,10 @@ Upstream Engine: [https://github.com/YJDoc2/8086-Emulator](https://github.com/YJ
 
 ## 📜 License & Attribution
 
-- Built upon the open-source 8086 web emulator by [YJDoc2](https://github.com/YJDoc2/8086-Emulator).
+- The execution engine is the open-source 8086 emulator by
+  [YJDoc2](https://github.com/YJDoc2/8086-Emulator); this repository adds the
+  learning lab UI, educational panels and the GitHub Pages build pipeline
+  around it.
 - Licensed under either of:
   - Apache License, Version 2.0 ([LICENSE_APACHE](LICENSE_APACHE))
   - MIT License ([LICENSE_MIT](LICENSE_MIT))

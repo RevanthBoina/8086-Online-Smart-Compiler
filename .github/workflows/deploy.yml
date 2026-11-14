@@ -17,10 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -29,11 +26,69 @@ jobs:
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload static build artifact
+      # The Rust/WASM engine has to exist before `npm ci`, because
+      # webapp/package.json declares `"emulator_8086": "file:../pkg"`.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build Rust crate to WASM (release, pkg/)
+        run: wasm-pack build --release --target web --out-dir pkg
+
+      # The frontend fetches `${PUBLIC_URL}/emulator_8086_web_bg.wasm`, so the
+      # freshly generated binary must be the one shipped with the app bundle.
+      - name: Copy generated WASM binary into webapp/public
+        run: cp -f pkg/emulator_8086_web_bg.wasm webapp/public/emulator_8086_web_bg.wasm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Install webapp dependencies
+        working-directory: webapp
+        run: npm ci --legacy-peer-deps
+
+      - name: Build React application
+        working-directory: webapp
+        run: npm run build
+
+      # GitHub Pages serves 404.html for unknown paths, which keeps direct
+      # navigation to /8086-Online-Smart-Compiler/compile working on refresh.
+      - name: Generate SPA 404 fallback
+        run: |
+          cp webapp/build/index.html webapp/build/404.html
+          touch webapp/build/.nojekyll
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'docs/'
+          path: webapp/build/
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

@@ -108,6 +108,52 @@ const REGISTER_INFO = {
   IP: 'Instruction Pointer: execution position (interpreter index).',
 };
 
+/**
+ * Resolve a register (16-bit or 8-bit alias) from a snapshot's register map.
+ * Returns undefined when the snapshot does not contain that register, which
+ * is how callers detect "there is no previous step to compare against".
+ */
+function resolveRegister(regs, name) {
+  if (!regs) return undefined;
+  const word = (base) => (regs[base] !== undefined ? regs[base] : undefined);
+  switch (name) {
+    case 'AH': {
+      const ax = word('AX');
+      return ax === undefined ? undefined : (ax >> 8) & 0xff;
+    }
+    case 'AL': {
+      const ax = word('AX');
+      return ax === undefined ? undefined : ax & 0xff;
+    }
+    case 'BH': {
+      const bx = word('BX');
+      return bx === undefined ? undefined : (bx >> 8) & 0xff;
+    }
+    case 'BL': {
+      const bx = word('BX');
+      return bx === undefined ? undefined : bx & 0xff;
+    }
+    case 'CH': {
+      const cx = word('CX');
+      return cx === undefined ? undefined : (cx >> 8) & 0xff;
+    }
+    case 'CL': {
+      const cx = word('CX');
+      return cx === undefined ? undefined : cx & 0xff;
+    }
+    case 'DH': {
+      const dx = word('DX');
+      return dx === undefined ? undefined : (dx >> 8) & 0xff;
+    }
+    case 'DL': {
+      const dx = word('DX');
+      return dx === undefined ? undefined : dx & 0xff;
+    }
+    default:
+      return regs[name];
+  }
+}
+
 export default function RegisterPanel({ liveRegisters, changedRegs = {}, prevRegisters = {} }) {
   const classes = useStyles();
   const { state, setRadix } = useEmulator();
@@ -115,34 +161,18 @@ export default function RegisterPanel({ liveRegisters, changedRegs = {}, prevReg
 
   const currentSnapshot = state.currentIndex >= 0 && state.history[state.currentIndex];
   const regs = (currentSnapshot && currentSnapshot.registers) || liveRegisters || {};
-  const prev = (state.currentIndex > 0 && state.history[state.currentIndex - 1]?.registers) || prevRegisters || {};
+  const prev =
+    (state.currentIndex > 0 && state.history[state.currentIndex - 1]?.registers) ||
+    prevRegisters;
 
   const renderRegisterCard = (name, isByte = false) => {
-    let val = 0;
-    if (name === 'AH') val = (regs.AX >> 8) & 0xff;
-    else if (name === 'AL') val = regs.AX & 0xff;
-    else if (name === 'BH') val = (regs.BX >> 8) & 0xff;
-    else if (name === 'BL') val = regs.BX & 0xff;
-    else if (name === 'CH') val = (regs.CX >> 8) & 0xff;
-    else if (name === 'CL') val = regs.CX & 0xff;
-    else if (name === 'DH') val = (regs.DX >> 8) & 0xff;
-    else if (name === 'DL') val = regs.DX & 0xff;
-    else val = regs[name] !== undefined ? regs[name] : 0;
+    const rawVal = resolveRegister(regs, name);
+    const val = rawVal === undefined ? 0 : rawVal;
+    const prevVal = resolveRegister(prev, name);
+    const hasPrev = prevVal !== undefined;
 
-    let prevVal = val;
-    if (prev) {
-      if (name === 'AH') prevVal = (prev.AX >> 8) & 0xff;
-      else if (name === 'AL') prevVal = prev.AX & 0xff;
-      else if (name === 'BH') prevVal = (prev.BX >> 8) & 0xff;
-      else if (name === 'BL') prevVal = prev.BL & 0xff;
-      else if (name === 'CH') prevVal = (prev.CX >> 8) & 0xff;
-      else if (name === 'CL') prevVal = prev.CL & 0xff;
-      else if (name === 'DH') prevVal = (prev.DX >> 8) & 0xff;
-      else if (name === 'DL') prevVal = prev.DL & 0xff;
-      else if (prev[name] !== undefined) prevVal = prev[name];
-    }
-
-    const isChanged = changedRegs[name] || (prev && prevVal !== val);
+    const isChanged =
+      !!changedRegs[name] || (hasPrev && prevVal !== val);
     const formatted = formatValue(val, radix, isByte);
     const signedDec = toDecSigned(val, isByte);
     const info = REGISTER_INFO[name] || `${name} register`;
@@ -154,7 +184,7 @@ export default function RegisterPanel({ liveRegisters, changedRegs = {}, prevReg
           <div>
             <div><strong>{name}</strong>: {info}</div>
             <div>Unsigned: {val} | Signed: {signedDec}</div>
-            {isChanged && (
+            {isChanged && hasPrev && (
               <div style={{ color: '#93c5fd', marginTop: '4px' }}>
                 Previous: {formatValue(prevVal, radix, isByte)} → {formatted}
               </div>
@@ -170,7 +200,7 @@ export default function RegisterPanel({ liveRegisters, changedRegs = {}, prevReg
           </div>
           <div className={classes.valRow}>
             <span className={classes.regVal}>{formatted}</span>
-            {isChanged && (
+            {isChanged && hasPrev && (
               <span style={{ fontSize: '11px', color: '#64748b' }}>
                 was {formatValue(prevVal, radix, isByte)}
               </span>
