@@ -514,7 +514,14 @@ impl Parser {
             return Ok(());
         }
         if self.is_ident(1, "PROC") {
-            // `name PROC [NEAR|FAR]`
+            // `name PROC [NEAR|FAR]` - define the routine label where its
+            // first instruction will be (resolved by sema as a code label)
+            if let Some(l) = label.take() {
+                stmts.push(Stmt::DefLabel { name: l, line });
+            }
+            if let Some(Token { tok: Tok::Ident(n), .. }) = self.peek().cloned() {
+                stmts.push(Stmt::DefLabel { name: n, line });
+            }
             self.pos += 2;
             if let Some(Token { tok: Tok::Ident(s), .. }) = self.peek().cloned() {
                 let uu = up(&s);

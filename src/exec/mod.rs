@@ -851,7 +851,8 @@ impl Cpu {
                         format!("value of AH = 0x{:02X} is not supported for int 0x10", ah),
                     ));
                 }
-                Ok(StepOut { halt: false, int: Some(0x10), ah: Some(ah) })
+                // the frontend contract reports the *service number* in decimal
+                Ok(StepOut { halt: false, int: Some(10), ah: Some(ah) })
             }
             0x20 => {
                 self.halted = true;
@@ -864,7 +865,7 @@ impl Cpu {
                         format!("value of AH = 0x{:02X} is not supported for int 0x21", ah),
                     ));
                 }
-                Ok(StepOut { halt: false, int: Some(0x21), ah: Some(ah) })
+                Ok(StepOut { halt: false, int: Some(21), ah: Some(ah) })
             }
             other => Err(Self::at(instr, format!("int 0x{:02X} is not supported", other))),
         }
