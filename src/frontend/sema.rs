@@ -21,6 +21,17 @@ pub struct Program {
     pub data_labels: HashMap<String, u16>,
     pub code_labels: HashMap<String, usize>,
     pub lines: Vec<String>,
+    /// `.STACK n` initial SP (None = the DOS default of FFFEh).
+    pub stack_size: Option<u16>,
+}
+
+/// MASM predefined segment constants. The runtime is one flat 1 MB segment,
+/// so every segment starts at paragraph 0.
+pub fn is_segment_const(name: &str) -> bool {
+    matches!(
+        name.to_ascii_uppercase().as_str(),
+        "@DATA" | "@CODE" | "@STACK" | "@CONST" | "@FARDATA" | "@DATA?" | "@CODE?"
+    )
 }
 
 fn op_size(o: &Operand) -> Option<Size> {
@@ -65,13 +76,16 @@ fn fold_mem(
         match t {
             Term::Num(v) => disp = disp.saturating_add(*v),
             Term::Sym(name) => {
-                if code_labels.contains_key(name) {
+                if is_segment_const(name) {
+                    // @DATA etc. are paragraph 0 in the flat memory model
+                } else if code_labels.contains_key(name) {
                     return err(m.line, m.col, format!("Label '{}' is code, not data", name));
-                }
-                match data_labels.get(name) {
-                    Some(v) => disp = disp.saturating_add(*v as i32),
-                    None => {
-                        return err(m.line, m.col, format!("Label '{}' used but not defined", name))
+                } else {
+                    match data_labels.get(name) {
+                        Some(v) => disp = disp.saturating_add(*v as i32),
+                        None => {
+                            return err(m.line, m.col, format!("Label '{}' used but not defined", name))
+                        }
                     }
                 }
             }
@@ -145,6 +159,10 @@ fn resolve_operand(
         Operand::Imm(e) => match e {
             Expr::Num(_) => Ok(()),
             Expr::Offset(name) => {
+                if is_segment_const(name) {
+                    *e = Expr::Num(0);
+                    return Ok(());
+                }
                 if code_labels.contains_key(name) {
                     return err(line, col, format!("OFFSET requires data, '{}' is code", name));
                 }
@@ -208,6 +226,7 @@ pub fn analyze(stmts: Vec<Stmt>, lines: Vec<String>) -> Result<Program, SemaErro
     let mut data_labels: HashMap<String, u16> = HashMap::new();
     let mut code_labels: HashMap<String, usize> = HashMap::new();
     let mut origin: u32 = 0;
+    let mut stack_size: Option<u16> = None;
     let mut pending: Vec<(String, usize)> = Vec::new();
     let mut end_target: Option<String> = None;
     let mut end_line: usize = 1;
@@ -229,6 +248,12 @@ pub fn analyze(stmts: Vec<Stmt>, lines: Vec<String>) -> Result<Program, SemaErro
                     return err(line, 0, "SET address beyond 1 MB");
                 }
                 origin = new_origin;
+            }
+            Stmt::SetStack { line, size } => {
+                if stack_size.is_some() {
+                    return err(line, 0, "duplicate .STACK directive");
+                }
+                stack_size = Some(size);
             }
             Stmt::End { line, target } => {
                 end_target = target;
@@ -328,7 +353,7 @@ pub fn analyze(stmts: Vec<Stmt>, lines: Vec<String>) -> Result<Program, SemaErro
         rep: None,
     });
 
-    Ok(Program { instrs, entry, data_init, data_labels, code_labels, lines })
+    Ok(Program { instrs, entry, data_init, data_labels, code_labels, lines, stack_size })
 }
 
 fn validate_and_resolve(

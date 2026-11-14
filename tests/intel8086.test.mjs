@@ -162,13 +162,53 @@ console.log('\n6. Directives and size keywords');
   check('both instructions executed', snapshots.length === 3, snapshots.length);
 }
 
+/* 6b. MASM directives: implemented semantics vs explicit diagnostics ---- */
+console.log('\n6b. MASM directives: implemented vs rejected');
+{
+  const r = run('.STACK 100H\nMOV AX,0001H\nHLT');
+  check('.STACK 100H initialises SP=0100H', r.last.registers.SP === 0x0100, hex16(r.last.registers.SP));
+}
+{
+  const r = run(`.MODEL SMALL
+.DATA
+MSG DB 'X'
+.CODE
+MOV AX,@DATA
+MOV DS,AX
+MOV BL,@STACK
+HLT`);
+  check(
+    '.MODEL SMALL + @DATA/@STACK resolve to paragraph 0',
+    r.last.registers.AX === 0 &&
+      r.last.registers.DS === 0 &&
+      (r.last.registers.BX & 0xff) === 0,
+    `AX=${hex16(r.last.registers.AX)} DS=${hex16(r.last.registers.DS)} BX=${hex16(r.last.registers.BX)}`
+  );
+}
+{
+  let threw = null;
+  try {
+    compile('ASSUME CS:CODE, DS:DATA\n.8086\nMOV AX,0001H\nHLT');
+  } catch (e) {
+    threw = String((e && e.message) || e);
+  }
+  check('ASSUME and .8086 are accepted', threw === null, threw);
+}
+expectError('.386 is rejected (8086 only)', '.386\nMOV AX,0001H\nHLT', '8086');
+expectError('.FOO is rejected as unsupported', '.FOO\nMOV AX,0001H\nHLT', 'Unsupported directive');
+expectError('.STACK without a size is rejected', '.STACK\nMOV AX,0001H\nHLT', '.STACK expects');
+expectError('EQU is rejected with a clear message', 'VAL EQU 5\nMOV AX,0001H\nHLT', 'EQU is not supported');
+expectError('ORG is rejected with a clear message', 'ORG 100H\nMOV AX,0001H\nHLT', 'ORG is not supported');
+expectError('SEGMENT is rejected with a clear message', 'MYSEG SEGMENT\nMOV AX,0001H\nHLT', 'SEGMENT/ENDS are not supported');
+
 /* 7. Literal forms ------------------------------------------------------------------- */
 console.log('\n7. Literal forms');
 {
   const src = ['MOV AX, 21H', 'ADD AX, 0x21', 'ADD AX, 0005h', 'ADD AX, 1010b', 'ADD AX, FFh', 'HLT'].join('\n');
   const { last } = run(src);
   // 0x21 + 0x21 + 5 + 10 + 255 = 0x21+0x21=0x42; +5=0x47; +10=0x51; +255=0x14E
-  check('21H/0x21/0005h/1010b/FFh all compile and add up', last.registers.AX === 0x014e, hex16(last.registers.AX));
+  // 0x21 + 0x21 + 0x05 + 10 + 0xFF = 0x150
+  check('21H/0x21/0005h/1010b/FFh all compile and add up', last.registers.AX === 0x0150, hex16(last.registers.AX));
 }
 {
   const src = ["MOV DL, 'B'", 'MOV AH, 02H', 'INT 21H', 'HLT'].join('\n');

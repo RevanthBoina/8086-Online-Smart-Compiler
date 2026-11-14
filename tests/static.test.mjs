@@ -136,7 +136,8 @@ check(
 );
 const magic = wasm.buf.slice(0, 4).toString('latin1');
 check('wasm binary has the \\0asm magic', magic === '\0asm', JSON.stringify(magic));
-check('wasm is the current engine build (size > 1.6 MB)', wasm.buf.length >= 1600000, wasm.buf.length);
+// The rewritten engine (wee_alloc, no upstream deps) builds to ~130 KB.
+check('wasm is a real engine build (size > 100 KB)', wasm.buf.length >= 100000, wasm.buf.length);
 
 // Nothing in the built HTML points at an external compiler / old repo.
 check('no external compiler host in the entry HTML', !/coa-8086|8086-emulator-web|yjdoc2\.github\.io/.test(home.text));

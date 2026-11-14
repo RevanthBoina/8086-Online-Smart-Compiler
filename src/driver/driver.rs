@@ -82,6 +82,10 @@ pub struct WebDriver {
 impl WebDriver {
     pub fn new(prog: Program) -> Self {
         let mut cpu = Cpu::new();
+        if let Some(sz) = prog.stack_size {
+            // `.STACK n` - the stack starts at n and grows downwards.
+            cpu.r[crate::frontend::ast::Reg::SP as usize] = sz;
+        }
         for (addr, byte) in &prog.data_init {
             cpu.write8(*addr as usize, *byte);
         }

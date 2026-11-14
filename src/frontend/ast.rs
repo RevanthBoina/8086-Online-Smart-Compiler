@@ -273,6 +273,12 @@ pub enum Stmt {
         line: usize,
         value: i32,
     },
+    /// `.STACK n` - initialise SP to n (the stack grows downwards inside the
+    /// flat segment); without it SP starts at FFFEh like a DOS program.
+    SetStack {
+        line: usize,
+        size: u16,
+    },
     /// PROC/ENDP/.CODE/.DATA style markers - no runtime effect.
     Marker {
         line: usize,
