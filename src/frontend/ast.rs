@@ -244,7 +244,7 @@ pub struct Instr {
     pub rep: Option<RepKind>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DataItem {
     Bytes(Vec<u8>),
     Words(Vec<u16>),
