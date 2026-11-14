@@ -140,6 +140,27 @@ export class EmulatorAdapter {
   }
 
   /**
+   * Handle INT 21h AH=09: print the '$'-terminated string at DS:DX.
+   */
+  getInt21StringOutput() {
+    if (!this.driver) return '';
+    try {
+      const r = this.driver.get_reg();
+      const dx = ((r.dh << 8) | r.dl) & 0xffff;
+      // get_mem returns a Uint8Array (wasm Vec<u8>) for [start..end]
+      const bytes = this.driver.get_mem(dx, (dx + 254) & 0xffff) || [];
+      let end = bytes.indexOf(0x24); // '$'
+      if (end < 0) end = bytes.length;
+      let out = '';
+      for (let i = 0; i < end; i += 1) out += String.fromCharCode(bytes[i] & 0xff);
+      return out;
+    } catch (err) {
+      console.warn('INT 21h AH=09 read error:', err);
+      return '';
+    }
+  }
+
+  /**
    * Set INT 21h input string
    */
   setInt21Input(inputStr) {

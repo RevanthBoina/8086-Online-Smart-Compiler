@@ -82,6 +82,10 @@ pub struct WebDriver {
 impl WebDriver {
     pub fn new(prog: Program) -> Self {
         let mut cpu = Cpu::new();
+        if let Some(sz) = prog.stack_size {
+            // `.STACK n` - the stack starts at n and grows downwards.
+            cpu.r[crate::frontend::ast::Reg::SP as usize] = sz;
+        }
         for (addr, byte) in &prog.data_init {
             cpu.write8(*addr as usize, *byte);
         }
@@ -194,12 +198,12 @@ impl WebDriver {
         JsValue::from_str(&serde_json::to_string(&snapshot).unwrap())
     }
 
-    pub fn get_flags(&self) -> crate::util::JSFlags {
-        crate::util::get_flags(&self.cpu)
+    pub fn get_flags(&self) -> super::util::JSFlags {
+        super::util::get_flags(&self.cpu)
     }
 
-    pub fn get_reg(&self) -> crate::util::JSReg {
-        crate::util::get_reg(&self.cpu)
+    pub fn get_reg(&self) -> super::util::JSReg {
+        super::util::get_reg(&self.cpu)
     }
 
     pub fn get_mem(&self, start: usize, end: usize) -> Vec<u8> {

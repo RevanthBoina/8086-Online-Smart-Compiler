@@ -98,7 +98,6 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             '+' => { bump!(); out.push(Token { tok: Tok::Plus, line: tl, col: tc }); continue; }
             '-' => { bump!(); out.push(Token { tok: Tok::Minus, line: tl, col: tc }); continue; }
             '*' => { bump!(); out.push(Token { tok: Tok::Star, line: tl, col: tc }); continue; }
-            '.' => { bump!(); out.push(Token { tok: Tok::Dot, line: tl, col: tc }); continue; }
             _ => {}
         }
         // string literal

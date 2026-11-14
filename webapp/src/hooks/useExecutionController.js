@@ -79,6 +79,9 @@ export function useExecutionController({ adapter, onOutput, onLineChange, onInpu
       } else if (res.ahVal === 2) {
         const out = adapter.getInt21Output();
         if (out && onOutput) onOutput(out);
+      } else if (res.ahVal === 9) {
+        const out = adapter.getInt21StringOutput();
+        if (out && onOutput) onOutput(out);
       }
     }
 

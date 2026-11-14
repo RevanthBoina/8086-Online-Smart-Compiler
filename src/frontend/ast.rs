@@ -244,7 +244,7 @@ pub struct Instr {
     pub rep: Option<RepKind>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DataItem {
     Bytes(Vec<u8>),
     Words(Vec<u16>),
@@ -272,6 +272,12 @@ pub enum Stmt {
     SetAddr {
         line: usize,
         value: i32,
+    },
+    /// `.STACK n` - initialise SP to n (the stack grows downwards inside the
+    /// flat segment); without it SP starts at FFFEh like a DOS program.
+    SetStack {
+        line: usize,
+        size: u16,
     },
     /// PROC/ENDP/.CODE/.DATA style markers - no runtime effect.
     Marker {

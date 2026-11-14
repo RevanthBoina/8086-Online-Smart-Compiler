@@ -459,6 +459,24 @@ impl Parser {
             label = Some(s);
         }
 
+        // colon-less data label (MASM): `VALUE DW 1234H`
+        if label.is_none() {
+            let pair = match (self.peek().cloned(), self.peek_at(1).cloned()) {
+                (
+                    Some(Token { tok: Tok::Ident(n), line: l1, .. }),
+                    Some(Token { tok: Tok::Ident(w), line: l2, .. }),
+                ) => Some((n, l1, w, l2)),
+                _ => None,
+            };
+            if let Some((n, l1, w, l2)) = pair {
+                let wu = up(&w);
+                if l1 == l2 && !n.starts_with('.') && (wu == "DB" || wu == "DW") {
+                    label = Some(n);
+                    self.pos += 1;
+                }
+            }
+        }
+
         let t = match self.peek().cloned() {
             Some(t) => t,
             None => return Ok(()),
@@ -471,17 +489,100 @@ impl Parser {
         let u = up(&word);
 
         // directives / markers -------------------------------------------------
-        if u == ".DATA" || u == ".CODE" {
+        if u == ".DATA" || u == ".CODE" || u == ".CONST" || u == ".DATA?" {
             self.pos += 1;
             stmts.push(Stmt::Marker { line });
             return Ok(());
         }
         if word.starts_with('.') {
-            // .STACK n / .MODEL ... : accept and skip the rest of the line
             self.pos += 1;
+            // a stray `name:` before a directive still defines a label
+            if let Some(l) = label.take() {
+                stmts.push(Stmt::DefLabel { name: l, line });
+            }
+            return match u.as_str() {
+                ".STACK" => {
+                    // MASM `.STACK n`: reserve n bytes of stack; SP starts at
+                    // n and the stack grows downwards inside the flat segment.
+                    let size = match self.peek().cloned() {
+                        Some(Token { tok: Tok::Num(v), line: l2, col: c2 }) if l2 == line => {
+                            self.pos += 1;
+                            if v < 2 || v > 65534 {
+                                return err(l2, c2, ".STACK size must be in 2..65534");
+                            }
+                            v as u16
+                        }
+                        Some(t2) => {
+                            return err(
+                                t2.line,
+                                t2.col,
+                                ".STACK expects a byte count (e.g. .STACK 100H)",
+                            )
+                        }
+                        None => {
+                            return err(line, col, ".STACK expects a byte count (e.g. .STACK 100H)")
+                        }
+                    };
+                    self.skip_line();
+                    stmts.push(Stmt::SetStack { line, size });
+                    Ok(())
+                }
+                ".MODEL" => {
+                    // Accepted with documented semantics: the runtime is a
+                    // single flat 1 MB segment (equivalent to the TINY model;
+                    // larger models fall back to the same flat layout), and
+                    // @DATA/@CODE/@STACK all resolve to paragraph 0.
+                    self.skip_line();
+                    stmts.push(Stmt::Marker { line });
+                    Ok(())
+                }
+                ".8086" => {
+                    // we target the original 8086 - nothing to select
+                    stmts.push(Stmt::Marker { line });
+                    Ok(())
+                }
+                ".386" | ".386P" | ".486" | ".586" | ".686" | ".X86" | ".8086P" => err(
+                    line,
+                    col,
+                    format!("{} is not supported: only the original 8086 is implemented", word),
+                ),
+                other => err(line, col, format!("Unsupported directive '{}'", other)),
+            };
+        }
+        if u == "ASSUME" {
+            // ASSUME only tells the assembler how segment registers are
+            // loaded; in the flat memory model every assumption already
+            // holds, so there is genuinely no code to generate.
             self.skip_line();
-            stmts.push(Stmt::Marker { line });
+            if let Some(l) = label.take() {
+                stmts.push(Stmt::DefLabel { name: l, line });
+            }
             return Ok(());
+        }
+        if u == "ORG" {
+            return err(
+                line,
+                col,
+                "ORG is not supported; use SET <paragraph> to position data (legacy syntax)",
+            );
+        }
+        if u == "EQU" || self.is_ident(1, "EQU") {
+            return err(
+                line,
+                col,
+                "EQU is not supported; declare values with DB/DW (or SET for a paragraph origin)",
+            );
+        }
+        if u == "SEGMENT"
+            || u == "ENDS"
+            || self.is_ident(1, "SEGMENT")
+            || self.is_ident(1, "ENDS")
+        {
+            return err(
+                line,
+                col,
+                "SEGMENT/ENDS are not supported; the engine uses a single flat 1 MB memory model",
+            );
         }
         if u == "END" {
             self.pos += 1;
@@ -496,7 +597,14 @@ impl Parser {
             return Ok(());
         }
         if self.is_ident(1, "PROC") {
-            // `name PROC [NEAR|FAR]`
+            // `name PROC [NEAR|FAR]` - define the routine label where its
+            // first instruction will be (resolved by sema as a code label)
+            if let Some(l) = label.take() {
+                stmts.push(Stmt::DefLabel { name: l, line });
+            }
+            if let Some(Token { tok: Tok::Ident(n), .. }) = self.peek().cloned() {
+                stmts.push(Stmt::DefLabel { name: n, line });
+            }
             self.pos += 2;
             if let Some(Token { tok: Tok::Ident(s), .. }) = self.peek().cloned() {
                 let uu = up(&s);
@@ -768,6 +876,22 @@ impl Parser {
                     }
                     return Ok(Operand::R8(r));
                 }
+                // MASM predefined segment constants (@DATA, @CODE, ...): they
+                // are EQU-like values - paragraph 0 in the flat memory model.
+                if s.starts_with('@') && super::sema::is_segment_const(&s) {
+                    self.pos += 1;
+                    if size.is_some() {
+                        return err(
+                            size_pos.0,
+                            size_pos.1,
+                            "Size keyword cannot be used with a segment constant",
+                        );
+                    }
+                    if seg.is_some() {
+                        return err(line, col, "Segment override cannot be used with a segment constant");
+                    }
+                    return Ok(Operand::Imm(Expr::Num(0)));
+                }
                 // direct memory or letter-initial numeric constant
                 self.pos += 1;
                 if size.is_none() && seg.is_none() && (looks_like_hex_ident(&s) || looks_like_binary_ident(&s)) {
@@ -955,7 +1079,7 @@ impl Parser {
                             if v < -32768 || v > 65535 {
                                 return err(t.line, t.col, format!("Value {} does not fit in DW", v));
                             }
-                            items.push(DataItem::Words(v as u16));
+                            items.push(DataItem::Words(vec![v as u16]));
                         }
                     }
                 }

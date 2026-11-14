@@ -266,10 +266,7 @@ impl Cpu {
         let m = Self::mask(w);
         let s = Self::sign(w);
         let (a, b) = (a & m, b & m);
-        let wide = a as u32
-            .wrapping_sub(b as u32)
-            .wrapping_sub(borrow as u32);
-        let res = (wide as u16) & m;
+        let res = a.wrapping_sub(b).wrapping_sub(borrow) & m;
         // carry = borrow out
         self.set_flag(CF, (b as u32 + borrow as u32) > a as u32);
         self.set_flag(AF, (a ^ b ^ res) & 0x10 != 0);
@@ -809,6 +806,9 @@ impl Cpu {
             _ if instr.op.is_string_op() => {
                 self.string_op(instr)?;
             }
+            other => {
+                return Err(Self::at(instr, format!("unsupported instruction {:?}", other)));
+            }
         }
         Ok(StepOut::none())
     }
@@ -851,7 +851,8 @@ impl Cpu {
                         format!("value of AH = 0x{:02X} is not supported for int 0x10", ah),
                     ));
                 }
-                Ok(StepOut { halt: false, int: Some(0x10), ah: Some(ah) })
+                // the frontend contract reports the *service number* in decimal
+                Ok(StepOut { halt: false, int: Some(10), ah: Some(ah) })
             }
             0x20 => {
                 self.halted = true;
@@ -864,7 +865,7 @@ impl Cpu {
                         format!("value of AH = 0x{:02X} is not supported for int 0x21", ah),
                     ));
                 }
-                Ok(StepOut { halt: false, int: Some(0x21), ah: Some(ah) })
+                Ok(StepOut { halt: false, int: Some(21), ah: Some(ah) })
             }
             other => Err(Self::at(instr, format!("int 0x{:02X} is not supported", other))),
         }
