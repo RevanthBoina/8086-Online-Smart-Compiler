@@ -36,7 +36,7 @@ jobs:
           cargo test --lib 2>&1 | tee /tmp/cargo-test.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            grep -E "error(\[|:)" /tmp/cargo-test.log | head -50 | sed 's/^/::error::/'
+            sed -e 's/\x1b\[[0-9;]*m//g' /tmp/cargo-test.log | grep -E -A6 "error(\[|:)| --> " | head -60 | sed 's/^/::error::/'
             exit "$code"
           fi
       - name: Build WASM package
@@ -45,7 +45,7 @@ jobs:
           wasm-pack build --release --target web --out-dir pkg 2>&1 | tee /tmp/wasmpack.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            grep -E "error(\[|:)" /tmp/wasmpack.log | head -50 | sed 's/^/::error::/'
+            sed -e 's/\x1b\[[0-9;]*m//g' /tmp/wasmpack.log | grep -E -A6 "error(\[|:)| --> " | head -60 | sed 's/^/::error::/'
             exit "$code"
           fi
       - name: Push generated package back to the branch

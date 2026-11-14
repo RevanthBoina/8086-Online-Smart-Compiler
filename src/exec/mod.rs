@@ -809,6 +809,9 @@ impl Cpu {
             _ if instr.op.is_string_op() => {
                 self.string_op(instr)?;
             }
+            other => {
+                return Err(Self::at(instr, format!("unsupported instruction {:?}", other)));
+            }
         }
         Ok(StepOut::none())
     }

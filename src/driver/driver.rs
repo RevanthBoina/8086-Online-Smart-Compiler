@@ -194,12 +194,12 @@ impl WebDriver {
         JsValue::from_str(&serde_json::to_string(&snapshot).unwrap())
     }
 
-    pub fn get_flags(&self) -> crate::util::JSFlags {
-        crate::util::get_flags(&self.cpu)
+    pub fn get_flags(&self) -> super::util::JSFlags {
+        super::util::get_flags(&self.cpu)
     }
 
-    pub fn get_reg(&self) -> crate::util::JSReg {
-        crate::util::get_reg(&self.cpu)
+    pub fn get_reg(&self) -> super::util::JSReg {
+        super::util::get_reg(&self.cpu)
     }
 
     pub fn get_mem(&self, start: usize, end: usize) -> Vec<u8> {
