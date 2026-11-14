@@ -22,6 +22,7 @@ fn line_snippet(lines: &[String], line: usize) -> String {
 }
 
 fn fmt_err(kind: &str, lines: &[String], line: usize, col: usize, msg: &str) -> String {
+    let line = line.max(1);
     format!(
         "{} at line {}:{} : {} : {}",
         kind,

@@ -955,7 +955,7 @@ impl Parser {
                             if v < -32768 || v > 65535 {
                                 return err(t.line, t.col, format!("Value {} does not fit in DW", v));
                             }
-                            items.push(DataItem::Words(v as u16));
+                            items.push(DataItem::Words(vec![v as u16]));
                         }
                     }
                 }
