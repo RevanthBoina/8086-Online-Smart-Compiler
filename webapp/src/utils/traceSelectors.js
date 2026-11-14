@@ -46,17 +46,25 @@ export function getFlagDiffs(currentSnap, prevSnap) {
   return diffs;
 }
 
+/**
+ * Memory diffs recorded by the WASM driver for the current step.
+ * Each change carries the byte value before and after the instruction, which
+ * is what allows historical RAM reconstruction.
+ */
 export function getMemoryDiffs(currentSnap) {
   if (!currentSnap || !currentSnap.changed_memory) return [];
   return currentSnap.changed_memory.map((c) => {
-    const val = c.after !== undefined ? c.after : c.value;
     const addrHex = '0x' + (c.address || 0).toString(16).toUpperCase().padStart(5, '0');
     return {
       address: c.address,
       addressHex: addrHex,
-      value: val,
-      valueHex: toHex2(val),
       before: c.before,
+      after: c.after,
+      beforeHex: toHex2(c.before),
+      afterHex: toHex2(c.after),
+      // `value` is kept as an alias of the resulting byte for older callers.
+      value: c.after,
+      valueHex: toHex2(c.after),
     };
   });
 }
@@ -127,7 +135,7 @@ export function exportTraceToCSV(history) {
     const regs = snap.registers || {};
     const flags = snap.flags || {};
     const memStr = (snap.changed_memory || [])
-      .map((c) => `[0x${c.address.toString(16).toUpperCase()}]=${toHex2(c.after !== undefined ? c.after : c.value)}`)
+      .map((c) => `[0x${c.address.toString(16).toUpperCase()}]=${toHex2(c.before)}->${toHex2(c.after)}`)
       .join('; ');
 
     const row = [
@@ -185,8 +193,11 @@ export function exportTraceToText(history) {
     if (snap.changed_memory && snap.changed_memory.length > 0) {
       lines.push('Memory Changes:');
       snap.changed_memory.forEach((c) => {
-        const val = c.after !== undefined ? c.after : c.value;
-        lines.push(`  [0x${c.address.toString(16).toUpperCase().padStart(5, '0')}] = ${toHex2(val)}`);
+        lines.push(
+          `  [0x${c.address.toString(16).toUpperCase().padStart(5, '0')}] = ${toHex2(
+            c.before
+          )} -> ${toHex2(c.after)}`
+        );
       });
     } else {
       lines.push('Memory Changes: none');

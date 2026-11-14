@@ -122,14 +122,17 @@ export default function HistoryTimeline() {
               });
             }
 
-            // Memory changes
+            // Memory changes (byte before -> byte after the instruction)
             const memChanges =
               snap.changed_memory && snap.changed_memory.length > 0
                 ? snap.changed_memory
                     .map(
                       (c) =>
-                        `[0x${c.address.toString(16).toUpperCase().padStart(5, '0')}]=${toHex2(
-                          c.after !== undefined ? c.after : c.value
+                        `[0x${c.address
+                          .toString(16)
+                          .toUpperCase()
+                          .padStart(5, '0')}]=${toHex2(c.before)}→${toHex2(
+                          c.after
                         )}`
                     )
                     .join(', ')

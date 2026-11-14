@@ -1,4 +1,4 @@
-import React, { useState, useContext, useRef, useEffect } from "react";
+import React, { useState, useContext, useRef, useEffect, useMemo } from "react";
 import { CustomThemeContext } from "../themes/CustomThemeProvider";
 import { useEmulator } from "../context/EmulatorContext";
 import ExecutionToolbar from "../components/simulator/ExecutionToolbar";
@@ -6,6 +6,9 @@ import ExplanationCard from "../components/simulator/ExplanationCard";
 import RegisterPanel from "../components/simulator/RegisterPanel";
 import FlagsPanel from "../components/simulator/FlagsPanel";
 import InspectorTabs from "../components/simulator/InspectorTabs";
+// Single execution engine: adapter + controller (run/step/pause/reset)
+import EmulatorAdapter from "../services/EmulatorAdapter";
+import { useExecutionController } from "../hooks/useExecutionController";
 // Ace Editor
 import AceEditor from "react-ace";
 import "ace-builds/src-noconflict/mode-assembly_x86";
@@ -82,8 +85,6 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-let intervalHandler = null;
-
 function convertArray(arr) {
   let newArr = [];
   while (arr.length) newArr.push(arr.splice(0, 16));
@@ -93,21 +94,28 @@ function convertArray(arr) {
 function Compiler(props) {
   const {
     state: emulatorState,
-    pushSnapshot,
     setBaseline,
     stepBack,
-    returnToLive,
     resetHistory,
+    setStatus,
   } = useEmulator();
 
-  const speedRef = useRef(emulatorState ? emulatorState.speed : 800);
-  useEffect(() => {
-    if (emulatorState) {
-      speedRef.current = emulatorState.speed;
-    }
-  }, [emulatorState?.speed]);
+  // One adapter per WASM module. It owns the WebDriver produced by
+  // `props.wasm.preprocess()` and is the only thing the execution
+  // controller drives, so there is exactly one execution mechanism.
+  const adapter = useMemo(
+    () => (props.wasm ? new EmulatorAdapter(props.wasm) : null),
+    [props.wasm]
+  );
 
-  const [running, setRunning] = useState(false);
+  const [driver, setDriver] = useState(null);
+  const [startAddress, setStartAddress] = useState("00000");
+  // Mirror of the memory window address. Long-lived run callbacks read the
+  // window from here so a mid-run address change can never leave the memory
+  // table showing bytes from the wrong address.
+  const memWindowRef = useRef(startAddress);
+  memWindowRef.current = startAddress;
+
   const [needsPreparation, setNeedsPreparation] = useState(false);
   const [changedRegs, setChangedRegs] = useState({});
   const [changedFlags, setChangedFlags] = useState({});
@@ -115,14 +123,16 @@ function Compiler(props) {
 
   // Derive diffs whenever currentIndex changes
   useEffect(() => {
-    if (!emulatorState || emulatorState.currentIndex < 0) {
+    if (emulatorState.currentIndex < 0) {
       setChangedRegs({});
       setChangedFlags({});
       return;
     }
-    const idx = emulatorState.currentIndex;
-    const cur = emulatorState.history[idx];
-    const prev = idx > 0 ? emulatorState.history[idx - 1] : null;
+    const cur = emulatorState.history[emulatorState.currentIndex];
+    const prev =
+      emulatorState.currentIndex > 0
+        ? emulatorState.history[emulatorState.currentIndex - 1]
+        : null;
 
     if (!cur) return;
 
@@ -158,11 +168,11 @@ function Compiler(props) {
       }, 1200);
       return () => clearTimeout(timer);
     }
-  }, [emulatorState?.currentIndex, emulatorState?.history.length]);
+  }, [emulatorState.currentIndex, emulatorState.history]);
 
   // Flash changed memory
   useEffect(() => {
-    if (!emulatorState || emulatorState.currentIndex < 0) {
+    if (emulatorState.currentIndex < 0) {
       setHighlightedMem(new Set());
       return;
     }
@@ -190,17 +200,11 @@ function Compiler(props) {
     } else {
       setHighlightedMem(new Set());
     }
-  }, [emulatorState?.currentIndex, emulatorState?.history.length]);
+  }, [emulatorState.currentIndex, emulatorState.history, startAddress, driver]);
 
   const [saved, setSaved] = useState(false);
   let codeEditor = useRef(null);
-  let compileRef = useRef(null);
-  let runRef = useRef(null);
   let ramRef = useRef(null);
-  let flagRef = useRef(null);
-  let registerRef = useRef(null);
-  let singleStepRef = useRef(null);
-  let stopRef = useRef(null);
   let editorContainer = useRef(null);
   let downloadRef = useRef(null);
   let startAddressRef = useRef(null);
@@ -219,7 +223,9 @@ function Compiler(props) {
   };
 
   const classes = useStyles();
-  const [halted, setHalted] = useState(false);
+  // Halted is derived from the shared execution status so the toolbar,
+  // the step/run buttons and the controller can never disagree.
+  const halted = emulatorState.status === "FINISHED";
   const [memory, setMemory] = useState([
     ["00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"],
     ["00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"],
@@ -232,12 +238,9 @@ function Compiler(props) {
   ]);
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
-  const [tutorial, setTutorial] = useState(false);
-  const [tutorialStep, setTutorialStep] = useState(-1);
-  const [driver, setDriver] = useState(null);
-  const [startAddress, setStartAddress] = useState("00000");
+  // Tutorial anchors used by aria-describedby; there is no tutorial flow yet.
+  const [tutorialStep] = useState(-1);
   const [compiled, setCompiled] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState("");
   const [addressError, setAddressError] = useState("");
   const [errorAnnotations, setErrorAnnotations] = useState([]);
@@ -254,39 +257,12 @@ function Compiler(props) {
     of: 0, df: 0, if: 0, tf: 0, sf: 0, zf: 0, af: 0, pf: 0, cf: 0,
   });
 
-  const displayRegister = currentSnapshot && currentSnapshot.registers ? {
-    ah: (((currentSnapshot.registers.AX || 0) >> 8) & 0xff).toString(16).padStart(2, '0'),
-    al: ((currentSnapshot.registers.AX || 0) & 0xff).toString(16).padStart(2, '0'),
-    bh: (((currentSnapshot.registers.BX || 0) >> 8) & 0xff).toString(16).padStart(2, '0'),
-    bl: ((currentSnapshot.registers.BX || 0) & 0xff).toString(16).padStart(2, '0'),
-    ch: (((currentSnapshot.registers.CX || 0) >> 8) & 0xff).toString(16).padStart(2, '0'),
-    cl: ((currentSnapshot.registers.CX || 0) & 0xff).toString(16).padStart(2, '0'),
-    dh: (((currentSnapshot.registers.DX || 0) >> 8) & 0xff).toString(16).padStart(2, '0'),
-    dl: ((currentSnapshot.registers.DX || 0) & 0xff).toString(16).padStart(2, '0'),
-    sp: (currentSnapshot.registers.SP !== undefined ? currentSnapshot.registers.SP : 0).toString(16).padStart(4, '0'),
-    bp: (currentSnapshot.registers.BP !== undefined ? currentSnapshot.registers.BP : 0).toString(16).padStart(4, '0'),
-    si: (currentSnapshot.registers.SI !== undefined ? currentSnapshot.registers.SI : 0).toString(16).padStart(4, '0'),
-    di: (currentSnapshot.registers.DI !== undefined ? currentSnapshot.registers.DI : 0).toString(16).padStart(4, '0'),
-    ss: (currentSnapshot.registers.SS !== undefined ? currentSnapshot.registers.SS : 0).toString(16).padStart(4, '0'),
-    ds: (currentSnapshot.registers.DS !== undefined ? currentSnapshot.registers.DS : 0).toString(16).padStart(4, '0'),
-    es: (currentSnapshot.registers.ES !== undefined ? currentSnapshot.registers.ES : 0).toString(16).padStart(4, '0'),
-  } : register;
-
-  const displayFlags = currentSnapshot && currentSnapshot.flags ? {
-    of: currentSnapshot.flags.OF ? 1 : 0,
-    df: currentSnapshot.flags.DF ? 1 : 0,
-    if: currentSnapshot.flags.IF ? 1 : 0,
-    tf: currentSnapshot.flags.TF ? 1 : 0,
-    sf: currentSnapshot.flags.SF ? 1 : 0,
-    zf: currentSnapshot.flags.ZF ? 1 : 0,
-    af: currentSnapshot.flags.AF ? 1 : 0,
-    pf: currentSnapshot.flags.PF ? 1 : 0,
-    cf: currentSnapshot.flags.CF ? 1 : 0,
-  } : flags;
-
   const displayMemory = React.useMemo(() => {
     if (!memory || memory.length === 0) return [];
-    if (!emulatorState || emulatorState.currentIndex < 0 || emulatorState.currentIndex >= emulatorState.history.length - 1) {
+    if (
+      emulatorState.currentIndex < 0 ||
+      emulatorState.currentIndex >= emulatorState.history.length - 1
+    ) {
       return memory;
     }
     const start = parseInt("0x" + startAddress) || 0;
@@ -299,22 +275,23 @@ function Compiler(props) {
             const offset = cm.address - start;
             const r = Math.floor(offset / 16);
             const c = offset % 16;
-            if (cm.before !== undefined && r >= 0 && r < memCopy.length && c >= 0 && c < 16) {
-              memCopy[r][c] = cm.before.toString(16).padStart(2, "0").toUpperCase();
+            if (r >= 0 && r < memCopy.length && c >= 0 && c < 16) {
+              // Replaying `before` of every newer step restores the byte as
+              // it was at the selected historical step — never a guess.
+              memCopy[r][c] = cm.before;
             }
           }
         }
       }
     }
     return memCopy;
-  }, [memory, emulatorState?.currentIndex, emulatorState?.history, startAddress]);
+  }, [memory, emulatorState.currentIndex, emulatorState.history, startAddress]);
 
   const handleStepForwardOrNext = () => {
-    if (emulatorState && emulatorState.isHistorical) {
-      returnToLive();
-    } else {
-      executeNext();
-    }
+    if (!compiled) return;
+    // The controller returns to the live step first when history is open,
+    // so the WebDriver is never modified while browsing history.
+    step();
   };
 
   const handleStepBack = () => {
@@ -324,10 +301,8 @@ function Compiler(props) {
   };
 
   const handleRun = () => {
-    if (emulatorState && emulatorState.isHistorical) {
-      returnToLive();
-    }
-    runCode();
+    if (!compiled) return;
+    run();
   };
 
   const [code, setCode] = useState(
@@ -365,7 +340,7 @@ HLT                  ; Halt execution`
   const set8086State = (drv) => {
     let reg = drv.get_reg();
     let flg = drv.get_flags();
-    let start = parseInt("0x" + startAddress);
+    let start = parseInt("0x" + memWindowRef.current) || 0;
     let mem = drv.get_mem(start, start + MEM_MAX - 1);
     setFlags({
       of: flg.of,
@@ -399,49 +374,58 @@ HLT                  ; Halt execution`
   };
 
   const compile = () => {
-    if (props.wasm) {
-      try {
-        const currentCode = (codeEditor.current && codeEditor.current.editor)
-          ? codeEditor.current.editor.getValue()
-          : code;
-        let drv = props.wasm.preprocess(currentCode);
-        setDriver(drv);
-        setLine(drv.line);
-        setCompiled(true);
-        setNeedsPreparation(false);
-        showSnackbar("Compiled Successfully");
-        setHalted(false);
-        set8086State(drv);
-        setErrors("");
-        addAnnotation("");
-
-        // Baseline step 0 snapshot
-        try {
-          const rawSnap = drv.get_state_snapshot();
-          const snapshot = JSON.parse(rawSnap);
-          setBaseline({
-            ...snapshot,
-            isBaseline: true,
-            instruction: "Program Prepared (Baseline)",
-            line: drv.line,
-          });
-        } catch (snapErr) {
-          console.warn("Could not capture baseline snapshot:", snapErr);
-        }
-      } catch (e) {
-        console.error("Compilation error in compile():", e);
-        setCompiled(false);
-        setHalted(true);
-        showSnackbar("Error Occurred!");
-        const errStr = typeof e === "string" ? e : (e.message || String(e));
-        setErrors(errStr);
-        addAnnotation(errStr);
-      }
-
-      localStorage.setItem("x86code", code);
-    } else {
-      setLoading(true);
+    if (!adapter) {
+      setCompiled(false);
+      setStatus("ERROR");
+      setErrors(
+        "The WebAssembly engine is not loaded. Reload the page to try again."
+      );
+      showSnackbar("Engine not loaded");
+      return;
     }
+    // Stop any automatic run before replacing the driver.
+    if (isRunning) pause();
+    try {
+      const currentCode = (codeEditor.current && codeEditor.current.editor)
+        ? codeEditor.current.editor.getValue()
+        : code;
+      // Real WASM entry point: validates/preprocesses the source and returns
+      // a brand new execution driver.
+      const prepared = adapter.prepare(currentCode);
+      if (!prepared.success) {
+        throw new Error(prepared.error || "Compilation failed.");
+      }
+      const drv = prepared.driver;
+      setDriver(drv);
+      setLine(drv.line);
+      setCompiled(true);
+      setNeedsPreparation(false);
+      showSnackbar("Compiled Successfully");
+      setStatus("READY");
+      set8086State(drv);
+      setErrors("");
+      addAnnotation("");
+
+      // Baseline step 0 snapshot, captured before any instruction runs.
+      if (prepared.baseline) {
+        setBaseline({
+          ...prepared.baseline,
+          isBaseline: true,
+          instruction: "Program Prepared (Baseline)",
+          line: drv.line,
+        });
+      }
+    } catch (e) {
+      console.error("Compilation error in compile():", e);
+      setCompiled(false);
+      setStatus("ERROR");
+      showSnackbar("Error Occurred!");
+      const errStr = typeof e === "string" ? e : (e.message || String(e));
+      setErrors(errStr);
+      addAnnotation(errStr);
+    }
+
+    localStorage.setItem("x86code", code);
   };
 
   const setLine = (line) => {
@@ -490,119 +474,48 @@ HLT                  ; Halt execution`
     }
   };
 
-  const executeNext = () => {
-    try {
-      let res = driver.next();
-      setLine(driver.line);
-      try {
-        const rawSnap = driver.get_state_snapshot();
-        const snapshot = JSON.parse(rawSnap);
-        pushSnapshot(snapshot);
-      } catch (snapErr) {
-        console.warn("Could not capture step snapshot:", snapErr);
-      }
+  // ---------------------------------------------------------------------------
+  // Single execution mechanism: EmulatorAdapter + useExecutionController.
+  // The controller owns the auto-run timer (only one chain can be alive),
+  // cancels stale runs through its run id and pushes every snapshot into the
+  // shared history. Nothing else is allowed to drive the WebDriver.
+  // ---------------------------------------------------------------------------
 
-      set8086State(driver);
-      if (res.halt !== undefined) {
-        setHalted(true);
-        stopCode();
-        showSnackbar("Program Finished");
-        return;
+  const { step, run, pause, reset, isRunning } = useExecutionController({
+    adapter,
+    onOutput: (text) => {
+      if (text) setOutput((prev) => prev + text);
+    },
+    onLineChange: (line) => {
+      setLine(line);
+      if (adapter && adapter.driver) {
+        set8086State(adapter.driver);
       }
-      if (res.int !== undefined) {
-        if (res.int === 10) {
-          setOutput((prev) => prev + driver.int_10());
-        } else if (res.int === 21) {
-          if (res.ah === 1) {
-            stopCode();
-            showSnackbar("Waiting for character input...");
-            if (inputRef.current) inputRef.current.focus();
-          } else if (res.ah === 2) {
-            setOutput((prev) => prev + driver.get_int_21());
-          } else if (res.ah === 10) {
-            stopCode();
-            showSnackbar("Waiting for line input...");
-            if (inputRef.current) inputRef.current.focus();
-          }
-        }
-      }
-    } catch (e) {
-      stopCode();
-      const errStr = typeof e === "string" ? e : (e.message || String(e));
-      setErrors(errStr);
-      showSnackbar("Runtime Error Occurred");
-    }
+    },
+    onInputRequired: (ahVal) => {
+      showSnackbar(
+        ahVal === 0x0a
+          ? "Waiting for line input..."
+          : "Waiting for character input..."
+      );
+      if (inputRef.current) inputRef.current.focus();
+    },
+  });
+
+  // Only pause when a run is actually active, otherwise the shared status
+  // would flip to PAUSED without any timer running.
+  const stopExecution = () => {
+    if (isRunning) pause();
   };
 
-  const startIntervalTask = () => {
-    if (!driver) return;
-    const currentSpeed = speedRef.current || 800;
-    intervalHandler = setInterval(async () => {
-      try {
-        let res = driver.next();
-        setLine(driver.line);
-        try {
-          const rawSnap = driver.get_state_snapshot();
-          const snapshot = JSON.parse(rawSnap);
-          pushSnapshot(snapshot);
-        } catch (snapErr) {
-          console.warn("Could not capture step snapshot:", snapErr);
-        }
-        set8086State(driver);
-
-        if (res.halt !== undefined) {
-          setHalted(true);
-          stopCode();
-          showSnackbar("Program Finished");
-          return;
-        }
-        if (res.int !== undefined) {
-          if (res.int === 10) {
-            setOutput((prev) => prev + driver.int_10());
-          } else if (res.int === 21) {
-            if (res.ah === 1) {
-              stopCode();
-              showSnackbar("Waiting for character input...");
-              if (inputRef.current) inputRef.current.focus();
-            } else if (res.ah === 2) {
-              setOutput((prev) => prev + driver.get_int_21());
-            } else if (res.ah === 10) {
-              stopCode();
-              showSnackbar("Waiting for line input...");
-              if (inputRef.current) inputRef.current.focus();
-            }
-          }
-        }
-      } catch (e) {
-        stopCode();
-        const errStr = typeof e === "string" ? e : (e.message || String(e));
-        setErrors(errStr);
-        showSnackbar("Runtime Error Occurred");
-      }
-    }, currentSpeed);
-  };
-
-  const runCode = () => {
-    if (running) return;
-    setRunning(true);
-    startIntervalTask();
-  };
-
-  const stopCode = () => {
-    if (intervalHandler) {
-      clearInterval(intervalHandler);
-      intervalHandler = null;
-    }
-    setRunning(false);
-  };
 
   const resetAll = () => {
-    stopCode();
-    resetHistory();
+    // Controller reset: stops the run timer, invalidates the run id, clears
+    // the history and drops the WebDriver so no stale run can write to it.
+    reset();
     setDriver(null);
     setCompiled(false);
     setNeedsPreparation(false);
-    setHalted(false);
     setErrors("");
     addAnnotation("");
     setOutput("");
@@ -621,24 +534,25 @@ HLT                  ; Halt execution`
   };
 
   const handleSelectExample = (newCode, label) => {
-    stopCode();
+    stopExecution();
     setCode(newCode);
     if (codeEditor.current && codeEditor.current.editor) {
       codeEditor.current.editor.setValue(newCode, -1);
     }
     localStorage.setItem("x86code", newCode);
     resetHistory();
+    if (adapter) adapter.reset();
+    setDriver(null);
     setCompiled(false);
     setNeedsPreparation(false);
-    setHalted(false);
     showSnackbar(`Loaded: ${label}`);
   };
 
   const handleInput = () => {
-    if (driver) {
-      driver.set_int_21(input);
+    if (adapter && adapter.driver) {
+      adapter.setInt21Input(input);
       setInput("");
-      runCode();
+      run();
     }
   };
 
@@ -663,7 +577,7 @@ HLT                  ; Halt execution`
     if (keyName === "ctrl+shift+2" || keyName === "f8") handleStepForwardOrNext();
     if (keyName === "shift+f8") handleStepBack();
     if (keyName === "ctrl+shift+3") handleRun();
-    if (keyName === "ctrl+shift+4") stopCode();
+    if (keyName === "ctrl+shift+4") stopExecution();
   };
 
   const currentLine = driver ? driver.line : 1;
@@ -796,10 +710,10 @@ HLT                  ; Halt execution`
         <ExecutionToolbar
           compiled={compiled}
           halted={halted}
-          running={running}
+          running={isRunning}
           onCompile={compile}
           onRun={handleRun}
-          onPause={stopCode}
+          onPause={pause}
           onStep={handleStepForwardOrNext}
           onPrev={handleStepBack}
           onReset={resetAll}

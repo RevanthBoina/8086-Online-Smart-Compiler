@@ -11,10 +11,17 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use wasm_bindgen::prelude::*;
 
+/// A single byte of RAM touched by the last executed instruction.
+///
+/// `before` is the byte value prior to the instruction and `after` the value
+/// once the instruction retired. Storing both lets the frontend rebuild the
+/// exact memory image of any historical step (walking history backwards and
+/// re-applying `before`), even when the same address changes repeatedly.
 #[derive(Serialize, Clone, Debug)]
 pub struct MemChange {
     pub address: u32,
-    pub value: u8,
+    pub before: u8,
+    pub after: u8,
 }
 
 #[allow(non_snake_case)]
@@ -250,11 +257,19 @@ impl WebDriver {
     fn record_step(&mut self, executed_inst: String) {
         self.last_instruction = executed_inst;
         self.vm.arch.ip = self.idx as u16;
-        let changed: Vec<MemChange> = self.vm.mem
+        // Diff current RAM against the snapshot taken after the previous step
+        // and record both the old and the new byte for every changed address.
+        let prev = &self.prev_memory;
+        let changed: Vec<MemChange> = self.vm
+            .mem
             .iter()
             .enumerate()
-            .filter(|(i, &v)| v != self.prev_memory[*i])
-            .map(|(i, &v)| MemChange { address: i as u32, value: v })
+            .filter(|(i, &after)| after != prev[*i])
+            .map(|(i, &after)| MemChange {
+                address: i as u32,
+                before: prev[i],
+                after,
+            })
             .collect();
         self.prev_memory.copy_from_slice(self.vm.mem.as_ref());
         self.last_changed_memory = changed;

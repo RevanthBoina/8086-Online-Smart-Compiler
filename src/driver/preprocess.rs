@@ -13,12 +13,78 @@ use std::mem::drop;
 use regex::Regex;
 use wasm_bindgen::prelude::*;
 
+/// Accept Intel-style hex literals such as `0005h`, `0FFh` or `21h` by
+/// rewriting them into the `0x…` form understood by the upstream grammar
+/// (the interpreter only accepts `0x…`, `0b…` and decimal numbers).
+///
+/// Safety rules:
+/// * only runs that **start with a digit** are considered, so identifiers such
+///   as `AH`, `BH` or `each` can never be rewritten;
+/// * `0x…` / `0b…` tokens are copied verbatim as one unit;
+/// * the character after `h` must not be alphanumeric, so `10hx` stays intact;
+/// * no newlines are added or removed, so every reported line number still
+///   matches the source the user is editing.
+fn normalize_hex_literals(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        // Already-valid 0x… / 0b… token: copy it as one unit.
+        if c == b'0'
+            && i + 1 < bytes.len()
+            && matches!(bytes[i + 1], b'x' | b'X' | b'b' | b'B')
+        {
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            out.push_str(&input[i..j]);
+            i = j;
+            continue;
+        }
+        // Numeric run (always starts with a digit => never an identifier).
+        if c.is_ascii_digit() {
+            let start = i;
+            let mut j = i;
+            while j < bytes.len() && bytes[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'h' || bytes[j] == b'H') {
+                let after = j + 1;
+                if after == bytes.len() || !bytes[after].is_ascii_alphanumeric() {
+                    out.push_str("0x");
+                    out.push_str(&input[start..j]);
+                    i = after;
+                    continue;
+                }
+            }
+            out.push_str(&input[start..j]);
+            i = j;
+            continue;
+        }
+        // Preserve any non-ASCII UTF-8 sequence untouched.
+        if c >= 0x80 {
+            let mut j = i + 1;
+            while j < bytes.len() && (bytes[j] & 0xC0) == 0x80 {
+                j += 1;
+            }
+            out.push_str(&input[i..j]);
+            i = j;
+            continue;
+        }
+        out.push(c as char);
+        i += 1;
+    }
+    out
+}
+
 #[wasm_bindgen]
 pub fn preprocess(input: &str) -> Result<WebDriver, JsValue> {
     let uncommented;
     {
         let r = Regex::new(r";.*\n?").unwrap();
-        uncommented = r.replace_all(input, "\n").to_string();
+        uncommented = normalize_hex_literals(&r.replace_all(input, "\n"));
         drop(r);
     }
     // create parameters

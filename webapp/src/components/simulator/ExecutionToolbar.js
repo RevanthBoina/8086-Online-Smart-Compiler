@@ -99,14 +99,19 @@ export default function ExecutionToolbar({
   const classes = useStyles();
   const { state, setSpeed, returnToLive } = useEmulator();
 
+  // Mirrors the shared execution status so the chip can never disagree with
+  // the controller (single source of truth: EmulatorContext.status).
   let statusText = 'Ready';
-  let statusColor = 'primary';
+  let statusColor = 'default';
   if (needsPreparation) {
     statusText = 'Needs preparation';
     statusColor = 'secondary';
-  } else if (!compiled) {
-    statusText = 'Editing';
-    statusColor = 'default';
+  } else if (state.status === 'ERROR') {
+    statusText = 'Error';
+    statusColor = 'secondary';
+  } else if (state.status === 'WAITING_INPUT') {
+    statusText = 'Waiting for input';
+    statusColor = 'secondary';
   } else if (running) {
     statusText = 'Running';
     statusColor = 'primary';
@@ -116,6 +121,12 @@ export default function ExecutionToolbar({
   } else if (state.isHistorical) {
     statusText = `Viewing Step ${state.currentIndex + 1} (History)`;
     statusColor = 'secondary';
+  } else if (!compiled) {
+    statusText = 'Editing';
+    statusColor = 'default';
+  } else if (state.status === 'PAUSED') {
+    statusText = 'Paused';
+    statusColor = 'default';
   }
 
   const speedPresets = [
@@ -179,7 +190,9 @@ export default function ExecutionToolbar({
                   size="small"
                   className={classes.runBtn}
                   onClick={onRun}
-                  disabled={!compiled || halted}
+                  disabled={
+                    !compiled || halted || state.status === 'WAITING_INPUT'
+                  }
                 >
                   RUN
                 </Button>

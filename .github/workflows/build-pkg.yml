@@ -1,0 +1,55 @@
+# TEMPORARY verification workflow: builds the WASM package on GitHub's
+# runners (full network access) and pushes `pkg/` back to this branch so the
+# generated engine can be tested locally. It is removed once verification is
+# complete.
+name: Build WASM package (verification)
+
+on:
+  push:
+    branches:
+      - arena/c7623e4e-8086-online-smart-compiler
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-pkg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-verify-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-verify-
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: wasm-pack build --release --target web --out-dir pkg
+
+      - name: Push generated package back to the branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f pkg
+          if git diff --cached --quiet; then
+            echo "pkg/ already up to date"
+          else
+            git commit -m "chore(verification): generated wasm package"
+            git push origin HEAD
+          fi

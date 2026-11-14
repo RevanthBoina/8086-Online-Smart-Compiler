@@ -9,7 +9,6 @@ export function useExecutionController({ adapter, onOutput, onLineChange, onInpu
   const {
     state,
     pushSnapshot,
-    setBaseline,
     setStatus,
     returnToLive,
     setError,
