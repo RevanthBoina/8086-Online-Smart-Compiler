@@ -459,6 +459,24 @@ impl Parser {
             label = Some(s);
         }
 
+        // colon-less data label (MASM): `VALUE DW 1234H`
+        if label.is_none() {
+            let pair = match (self.peek().cloned(), self.peek_at(1).cloned()) {
+                (
+                    Some(Token { tok: Tok::Ident(n), line: l1, .. }),
+                    Some(Token { tok: Tok::Ident(w), line: l2, .. }),
+                ) => Some((n, l1, w, l2)),
+                _ => None,
+            };
+            if let Some((n, l1, w, l2)) = pair {
+                let wu = up(&w);
+                if l1 == l2 && !n.starts_with('.') && (wu == "DB" || wu == "DW") {
+                    label = Some(n);
+                    self.pos += 1;
+                }
+            }
+        }
+
         let t = match self.peek().cloned() {
             Some(t) => t,
             None => return Ok(()),
