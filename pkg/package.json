@@ -1,0 +1,20 @@
+{
+  "name": "emulator-8086-web",
+  "type": "module",
+  "collaborators": [
+    "Yashodhan Joshi"
+  ],
+  "description": "Web bindings and app for 8086 emulator",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "files": [
+    "emulator_8086_web_bg.wasm",
+    "emulator_8086_web.js",
+    "emulator_8086_web.d.ts"
+  ],
+  "main": "emulator_8086_web.js",
+  "types": "emulator_8086_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
