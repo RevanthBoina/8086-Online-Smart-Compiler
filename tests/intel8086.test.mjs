@@ -133,7 +133,7 @@ console.log('\nAcceptance 5: DOS character output (INT 21H, AH=02H)');
   const { intInfo, last } = run(src);
   check('interrupt 21H/02H observed', !!intInfo && intInfo.int === 21 && intInfo.ah === 2, JSON.stringify(intInfo));
   check('output is "A"', intInfo && intInfo.out === 'A', intInfo && JSON.stringify(intInfo.out));
-  check('AL mirrors DL on output', last.registers.AX & 0xff === 0x41, hex16(last.registers.AX));
+  check('AL mirrors DL on output', (last.registers.AX & 0xff) === 0x41, hex16(last.registers.AX));
 }
 
 /* 6. Directives: PROC/ENDP/END, BYTE/WORD PTR variants ------------------------------ */
@@ -153,7 +153,7 @@ console.log('\n6. Directives and size keywords');
   ].join('\n');
   const { last } = run(src);
   check('AX = 1234H through PROC/ENDP/END program', last.registers.AX === 0x1234, hex16(last.registers.AX));
-  check('BL = 41H (first BUF byte at VALUE+2)', last.registers.BX & 0xff === 0x41, hex16(last.registers.BX));
+  check('BL = 41H (first BUF byte at VALUE+2)', (last.registers.BX & 0xff) === 0x41, hex16(last.registers.BX));
 }
 {
   const src = ['MOV AX, 1', 'MOV CX, 2'].join('\n'); // no HLT: implicit termination

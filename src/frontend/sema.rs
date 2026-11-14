@@ -273,7 +273,8 @@ pub fn analyze(stmts: Vec<Stmt>, lines: Vec<String>) -> Result<Program, SemaErro
                     }
                     code_labels.insert(name, instrs.len());
                 }
-                validate_and_resolve(&mut instr, &data_labels, &code_labels)?;
+                // validation happens in a second pass once every symbol
+                // (including forward jumps and later data) is known
                 instrs.push(instr);
             }
         }
@@ -294,6 +295,11 @@ pub fn analyze(stmts: Vec<Stmt>, lines: Vec<String>) -> Result<Program, SemaErro
 
     if instrs.is_empty() {
         return err(end_line, 0, "Program contains no instructions");
+    }
+
+    // second pass: resolve symbols + validate operands (all labels exist now)
+    for instr in instrs.iter_mut() {
+        validate_and_resolve(instr, &data_labels, &code_labels)?;
     }
 
     // entry point: END label wins, otherwise the first instruction
