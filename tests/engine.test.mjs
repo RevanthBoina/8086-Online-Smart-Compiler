@@ -143,11 +143,11 @@ console.log('\nC. Memory write/rewrite + historical reconstruction');
   const source = [
     'start:',
     'MOV AX, 1111h',
-    'MOV [0500h], AL',
+    'MOV byte [0500h], AL',
     'MOV AX, 2222h',
-    'MOV [0500h], AL',
+    'MOV byte [0500h], AL',
     'MOV AX, 3333h',
-    'MOV [0600h], AL',
+    'MOV byte [0600h], AL',
     'HLT',
   ].join('\n');
   const { snapshots: snaps, driver } = runProgram(source);
@@ -201,16 +201,17 @@ console.log('\nC. Memory write/rewrite + historical reconstruction');
     check('second write: before=11h after=22h', writes[1].before === 0x11 && writes[1].after === 0x22, JSON.stringify(writes[1]));
   }
 
-  // Backward walk from the last snapshot must land on the baseline (0).
+  // Backward walk from the LAST snapshot must land on the baseline (0):
+  // start from the final image and undo each step in reverse order.
   const backward = new Map();
-  for (const s of snaps) {
+  for (const s of [...snaps].reverse()) {
     for (const cm of [...s.changed_memory].reverse()) {
       const observed = backward.has(cm.address) ? backward.get(cm.address) : forward.get(cm.address);
       if (cm.address === addrTwice || cm.address === addrOther) {
         check(
-          `backward continuity @${cm.address.toString(16)} after=${cm.after}h`,
+          `backward continuity @${cm.address.toString(16)} after=${hex8(cm.after)}`,
           observed === cm.after,
-          `observed=${observed}`
+          `observed=${hex8(observed)}`
         );
       }
       backward.set(cm.address, cm.before);

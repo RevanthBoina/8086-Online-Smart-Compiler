@@ -86,8 +86,11 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 function convertArray(arr) {
+  // `WebDriver.get_mem()` returns a Uint8Array, which has no .splice();
+  // copy into a real array before chunking it into 16-byte rows.
+  const src = Array.prototype.slice.call(arr);
   let newArr = [];
-  while (arr.length) newArr.push(arr.splice(0, 16));
+  while (src.length) newArr.push(src.splice(0, 16));
   return newArr;
 }
 
