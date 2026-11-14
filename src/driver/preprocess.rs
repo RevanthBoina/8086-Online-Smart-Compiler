@@ -30,11 +30,8 @@ fn normalize_hex_literals(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
-        // Already-valid 0x… / 0b… token: copy it as one unit.
-        if c == b'0'
-            && i + 1 < bytes.len()
-            && matches!(bytes[i + 1], b'x' | b'X' | b'b' | b'B')
-        {
+        // Already-valid 0x… token: copy it as one unit.
+        if c == b'0' && i + 1 < bytes.len() && matches!(bytes[i + 1], b'x' | b'X') {
             let mut j = i + 2;
             while j < bytes.len() && bytes[j].is_ascii_hexdigit() {
                 j += 1;
@@ -42,6 +39,21 @@ fn normalize_hex_literals(input: &str) -> String {
             out.push_str(&input[i..j]);
             i = j;
             continue;
+        }
+        // A real 0b… token (only 0/1 digits, proper terminator) is copied
+        // verbatim. Anything else starting like `0B…` (e.g. the hex literal
+        // `0BCh`) falls through so the digit-run branch rewrites it to 0x0BC.
+        if c == b'0' && i + 1 < bytes.len() && matches!(bytes[i + 1], b'b' | b'B') {
+            let mut j = i + 2;
+            while j < bytes.len() && matches!(bytes[j], b'0' | b'1') {
+                j += 1;
+            }
+            let is_binary = j > i + 2 && (j == bytes.len() || !bytes[j].is_ascii_alphanumeric());
+            if is_binary {
+                out.push_str(&input[i..j]);
+                i = j;
+                continue;
+            }
         }
         // Numeric run (always starts with a digit => never an identifier).
         if c.is_ascii_digit() {
