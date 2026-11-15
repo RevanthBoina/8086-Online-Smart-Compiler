@@ -9,11 +9,6 @@ Live site: [https://revanthboina.github.io/8086-Online-Smart-Compiler/](https://
 
 **Underlying engine:** the lexer, parser, semantic checks and 8086 executor
 are implemented in this repository (Rust → WebAssembly, see [`src/`](src/)).
-The project builds on the open-source
-[YJDoc2/8086-Emulator](https://github.com/YJDoc2/8086-Emulator) work; the
-original attribution and licenses are preserved in
-[License & Attribution](#-license--attribution) below — this repository is
-where you write, run and study assembly programs.
 
 ---
 
@@ -108,12 +103,4 @@ navigation) and deploys `webapp/build/` to GitHub Pages on every push to
 
 ---
 
-## 📜 License & Attribution
 
-- The execution engine is the open-source 8086 emulator by
-  [YJDoc2](https://github.com/YJDoc2/8086-Emulator); this repository adds the
-  learning lab UI, educational panels and the GitHub Pages build pipeline
-  around it.
-- Licensed under either of:
-  - Apache License, Version 2.0 ([LICENSE_APACHE](LICENSE_APACHE))
-  - MIT License ([LICENSE_MIT](LICENSE_MIT))
