@@ -11,6 +11,7 @@ import AccordionDetails from '@material-ui/core/AccordionDetails';
 import Chip from '@material-ui/core/Chip';
 import { useEmulator } from '../../context/EmulatorContext';
 import { formatValue, toDecSigned } from '../../utils/numberFormat';
+import HexValue from '../../components/hex/HexValue';
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -199,7 +200,15 @@ export default function RegisterPanel({ liveRegisters, changedRegs = {}, prevReg
             {isChanged && <Chip label="Changed" size="small" className={classes.diffBadge} />}
           </div>
           <div className={classes.valRow}>
-            <span className={classes.regVal}>{formatted}</span>
+            {radix === 'HEX' ? (
+              <HexValue
+                id={`reg-${name}`}
+                hex={formatted}
+                ariaLabel={`Register ${name}, ${formatted}`}
+              />
+            ) : (
+              <span className={classes.regVal}>{formatted}</span>
+            )}
             {isChanged && hasPrev && (
               <span style={{ fontSize: '11px', color: '#64748b' }}>
                 was {formatValue(prevVal, radix, isByte)}

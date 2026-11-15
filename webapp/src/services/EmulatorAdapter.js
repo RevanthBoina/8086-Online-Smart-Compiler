@@ -80,6 +80,21 @@ export class EmulatorAdapter {
       const intNum = res && res.int !== undefined ? res.int : null;
       const ahVal = res && res.ah !== undefined ? res.ah : null;
 
+      // INT 21h AH=02 (character output) leaves AL = DL as a driver side
+      // effect. The snapshot above was taken before that side effect, so
+      // apply it now and re-snapshot so execution history shows the
+      // post-instruction register state (AL = DL).
+      if (intNum === 21 && ahVal === 2 && snapshot) {
+        try {
+          this.getInt21Output();
+          const raw = this.driver.get_state_snapshot();
+          snapshot = JSON.parse(raw);
+          snapshot.line = line;
+        } catch (snapErr) {
+          console.warn('Could not refresh snapshot after INT 21h output:', snapErr);
+        }
+      }
+
       return {
         success: true,
         result: res,

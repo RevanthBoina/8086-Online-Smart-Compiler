@@ -3,6 +3,8 @@ import { CustomThemeContext } from "../themes/CustomThemeProvider";
 import { useEmulator } from "../context/EmulatorContext";
 import ExecutionToolbar from "../components/simulator/ExecutionToolbar";
 import ExplanationCard from "../components/simulator/ExplanationCard";
+import HexValue from "../components/hex/HexValue";
+import HexConverterPopover from "../components/hex/HexConverterPopover";
 import RegisterPanel from "../components/simulator/RegisterPanel";
 import FlagsPanel from "../components/simulator/FlagsPanel";
 import InspectorTabs from "../components/simulator/InspectorTabs";
@@ -101,6 +103,7 @@ function Compiler(props) {
     stepBack,
     resetHistory,
     setStatus,
+    replaceLastSnapshot,
   } = useEmulator();
 
   // One adapter per WASM module. It owns the WebDriver produced by
@@ -554,6 +557,20 @@ HLT                  ; Halt execution`
   const handleInput = () => {
     if (adapter && adapter.driver) {
       adapter.setInt21Input(input);
+      // INT 21h input (AH=01/AH=0A) executed before the input text was
+      // supplied, so refresh the last recorded snapshot in place so
+      // execution history shows the post-input state (e.g. AL = input char,
+      // or the filled input buffer) instead of a stale pre-input snapshot.
+      try {
+        const raw = adapter.driver.get_state_snapshot();
+        if (raw) {
+          const snap = JSON.parse(raw);
+          snap.line = adapter.driver.line;
+          replaceLastSnapshot(snap);
+        }
+      } catch (e) {
+        console.warn('Could not refresh snapshot after INT 21h input:', e);
+      }
       setInput("");
       run();
     }
@@ -641,6 +658,12 @@ HLT                  ; Halt execution`
                     const cellAddr = startNum + index1 * 16 + index2;
                     const isChanged = highlightedMem.has(cellAddr);
                     const hexVal = (item || 0).toString(16).padStart(2, "0").toUpperCase();
+                    // Precompute the JSX attribute strings: two template-literal
+                    // attributes on one element confuse the JSX parser used by
+                    // the build toolchain.
+                    const cellHex = cellAddr.toString(16).toUpperCase().padStart(5, '0');
+                    const memId = `mem-${cellAddr}`;
+                    const memLabel = `Memory [${cellHex}] = ${hexVal}`;
                     return (
                       <TableCell
                         align="center"
@@ -648,7 +671,7 @@ HLT                  ; Halt execution`
                         className={`mem-cell ${isChanged ? "mem-changed" : ""}`}
                         style={{ fontFamily: 'monospace', fontSize: '13px', padding: '4px' }}
                       >
-                        {hexVal}
+                        <HexValue id={memId} hex={hexVal} ariaLabel={memLabel} />
                       </TableCell>
                     );
                   })}
@@ -820,6 +843,9 @@ HLT                  ; Halt execution`
           changedMemCount={highlightedMem.size}
         />
       </div>
+
+      {/* Click-to-convert hexadecimal popover (single shared instance) */}
+      <HexConverterPopover />
 
       {/* SNACKBAR NOTIFICATIONS */}
       <Snackbar

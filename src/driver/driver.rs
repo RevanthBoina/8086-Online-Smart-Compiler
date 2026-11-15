@@ -135,6 +135,13 @@ impl WebDriver {
 #[wasm_bindgen]
 impl WebDriver {
     pub fn next(&mut self) -> Result<InterpreterResult, JsValue> {
+        // Once the CPU is halted (HLT, INT 20h, or running off the end of the
+        // program) no further instruction is executed. Returning here without
+        // recording a step keeps repeated Step/Run calls from appending
+        // duplicate history entries with identical register/flag/memory state.
+        if self.cpu.halted {
+            return Ok(InterpreterResult { halt: Some(true), int: None, ah: None });
+        }
         let executed = if self.cpu.ip < self.prog.instrs.len() {
             self.prog.instrs[self.cpu.ip].text.clone()
         } else {
