@@ -3,6 +3,7 @@ import Button from '@material-ui/core/Button';
 import Chip from '@material-ui/core/Chip';
 import { useEmulator } from '../context/EmulatorContext';
 import { toHex4, toHex2 } from '../utils/numberFormat';
+import HexValue from './hex/HexValue';
 
 export default function HistoryTimeline() {
   const { state, jumpToStep, returnToLive } = useEmulator();
@@ -100,13 +101,23 @@ export default function HistoryTimeline() {
             const isActive = i === currentIndex;
             const prev = i > 0 ? history[i - 1] : null;
 
-            // Register diffs
+            // Register diffs (each hex value is clickable)
             const regDiffs = [];
             if (snap.registers) {
               Object.entries(snap.registers).forEach(([reg, val]) => {
                 const prevVal = prev && prev.registers ? prev.registers[reg] : undefined;
                 if (prevVal !== undefined && prevVal !== val) {
-                  regDiffs.push(`${reg}: ${toHex4(prevVal)} → ${toHex4(val)}`);
+                  regDiffs.push(
+                    <span key={reg} style={{ marginRight: '16px', whiteSpace: 'nowrap' }}>
+                      {reg}:{' '}
+                      <HexValue
+                        id={`hist-${i}-reg-${reg}-prev`}
+                        hex={toHex4(prevVal)}
+                      />
+                      {' → '}
+                      <HexValue id={`hist-${i}-reg-${reg}`} hex={toHex4(val)} />
+                    </span>
+                  );
                 }
               });
             }
@@ -122,20 +133,22 @@ export default function HistoryTimeline() {
               });
             }
 
-            // Memory changes (byte before -> byte after the instruction)
+            // Memory changes (address and before/after bytes are clickable)
             const memChanges =
               snap.changed_memory && snap.changed_memory.length > 0
-                ? snap.changed_memory
-                    .map(
-                      (c) =>
-                        `[0x${c.address
-                          .toString(16)
-                          .toUpperCase()
-                          .padStart(5, '0')}]=${toHex2(c.before)}→${toHex2(
-                          c.after
-                        )}`
-                    )
-                    .join(', ')
+                ? snap.changed_memory.map((c, ci) => {
+                    const addrHex = '0x' + c.address.toString(16).toUpperCase().padStart(5, '0');
+                    return (
+                      <span key={ci} style={{ marginRight: '10px', whiteSpace: 'nowrap' }}>
+                        [{' '}
+                        <HexValue id={`hist-${i}-mem-${ci}-addr`} hex={addrHex} />
+                        {']='}
+                        <HexValue id={`hist-${i}-mem-${ci}-before`} hex={toHex2(c.before)} />
+                        {' → '}
+                        <HexValue id={`hist-${i}-mem-${ci}-after`} hex={toHex2(c.after)} />
+                      </span>
+                    );
+                  })
                 : 'no changes';
 
             return (
@@ -173,11 +186,11 @@ export default function HistoryTimeline() {
                   </span>
                 </div>
 
-                {regDiffs.length > 0 && (
-                  <div style={{ color: '#16a34a', fontSize: '11px', marginTop: '2px' }}>
-                    {regDiffs.join('   ')}
-                  </div>
-                )}
+            {regDiffs.length > 0 && (
+              <div style={{ color: '#16a34a', fontSize: '11px', marginTop: '2px' }}>
+                {regDiffs}
+              </div>
+            )}
 
                 {flagDiffs.length > 0 && (
                   <div style={{ color: '#ea580c', fontSize: '11px', marginTop: '2px' }}>

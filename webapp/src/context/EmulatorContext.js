@@ -13,6 +13,7 @@ const initialState = {
   instructionBudget: 5000,
   instructionCount: 0,
   error: null,
+  hexConverter: null, // { key, hex, x, y } | null — shared click-to-convert popover
 };
 
 function reducer(state, action) {
@@ -41,6 +42,16 @@ function reducer(state, action) {
     case 'STEP_BACK':
       if (state.currentIndex <= 0) return state;
       return { ...state, currentIndex: state.currentIndex - 1 };
+
+    case 'REPLACE_LAST_SNAPSHOT': {
+      // Refresh the most recent history entry in place (e.g. after INT 21h
+      // input was supplied following the step that requested it) without
+      // appending a new entry or moving the current position.
+      if (state.history.length === 0) return state;
+      const nextHistory = [...state.history];
+      nextHistory[nextHistory.length - 1] = action.payload;
+      return { ...state, history: nextHistory };
+    }
 
     case 'STEP_FORWARD':
       if (state.currentIndex >= state.history.length - 1) return state;
@@ -72,6 +83,9 @@ function reducer(state, action) {
     case 'SET_BUDGET':
       return { ...state, instructionBudget: action.payload };
 
+    case 'SET_HEX_CONVERTER':
+      return { ...state, hexConverter: action.payload };
+
     case 'SET_ERROR':
       return { ...state, error: action.payload, status: 'ERROR' };
 
@@ -99,6 +113,9 @@ export function EmulatorProvider({ children }) {
 
   const stepBack = () =>
     dispatch({ type: 'STEP_BACK' });
+
+  const replaceLastSnapshot = (snapshot) =>
+    dispatch({ type: 'REPLACE_LAST_SNAPSHOT', payload: snapshot });
 
   const stepForward = () =>
     dispatch({ type: 'STEP_FORWARD' });
@@ -130,6 +147,9 @@ export function EmulatorProvider({ children }) {
   const setError = (err) =>
     dispatch({ type: 'SET_ERROR', payload: err });
 
+  const setHexConverter = (payload) =>
+    dispatch({ type: 'SET_HEX_CONVERTER', payload });
+
   const resetHistory = () =>
     dispatch({ type: 'RESET' });
 
@@ -145,6 +165,7 @@ export function EmulatorProvider({ children }) {
         pushSnapshot,
         setBaseline,
         stepBack,
+        replaceLastSnapshot,
         stepForward,
         jumpToStep,
         returnToLive,
@@ -155,6 +176,7 @@ export function EmulatorProvider({ children }) {
         newRunId,
         setInstructionBudget,
         setError,
+        setHexConverter,
         resetHistory,
       }}
     >
