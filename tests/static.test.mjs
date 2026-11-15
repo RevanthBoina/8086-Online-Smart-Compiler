@@ -142,6 +142,40 @@ check('wasm is a real engine build (size > 100 KB)', wasm.buf.length >= 100000, 
 // Nothing in the built HTML points at an external compiler / old repo.
 check('no external compiler host in the entry HTML', !/coa-8086|8086-emulator-web|yjdoc2\.github\.io/.test(home.text));
 
+// Links & credits: the built artifacts must carry the current repository
+// links and developer credits, and none of the retired upstream ones.
+const jsDir = path.join(buildDir, 'static', 'js');
+const bundle = fs
+  .readdirSync(jsDir)
+  .filter((f) => f.endsWith('.js'))
+  .map((f) => fs.readFileSync(path.join(jsDir, f), 'utf8'))
+  .join('\n');
+check(
+  'bundle links to this repository and lists both current developers',
+  bundle.includes('RevanthBoina/8086-Online-Smart-Compiler') &&
+    bundle.includes('Revanth Boina') &&
+    bundle.includes('dhanushkumar565')
+);
+check(
+  'bundle has no retired credits or command-line link',
+  !bundle.includes('Command line version') &&
+    !bundle.includes('Yashodhan Joshi') &&
+    !bundle.includes('Yatharth Vyas') &&
+    !bundle.includes('8086-Emulator-Web')
+);
+check(
+  'robots.txt points at this site',
+  fs.readFileSync(path.join(buildDir, 'robots.txt'), 'utf8').includes(
+    'revanthboina.github.io/8086-Online-Smart-Compiler/sitemap.xml'
+  )
+);
+const sitemapXml = fs.readFileSync(path.join(buildDir, 'sitemap.xml'), 'utf8');
+check(
+  'sitemap uses this site URLs only',
+  sitemapXml.includes('revanthboina.github.io/8086-Online-Smart-Compiler/') &&
+    !sitemapXml.includes('yjdoc2')
+);
+
 server.close();
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'}: ${pass} passed, ${fail} failed`);
 if (fail > 0) {

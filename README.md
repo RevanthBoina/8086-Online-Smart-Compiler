@@ -7,11 +7,13 @@ An interactive, educational 8086 CPU execution workspace designed for Computer O
 Repository: [https://github.com/RevanthBoina/8086-Online-Smart-Compiler](https://github.com/RevanthBoina/8086-Online-Smart-Compiler)  
 Live site: [https://revanthboina.github.io/8086-Online-Smart-Compiler/](https://revanthboina.github.io/8086-Online-Smart-Compiler/)
 
-**Underlying engine:** the interpreter and preprocessor are provided by the
-upstream [YJDoc2/8086-Emulator](https://github.com/YJDoc2/8086-Emulator)
-project, compiled to WebAssembly and embedded in this application. The
-upstream project is the engine source — this repository is where you write,
-run and study assembly programs.
+**Underlying engine:** the lexer, parser, semantic checks and 8086 executor
+are implemented in this repository (Rust → WebAssembly, see [`src/`](src/)).
+The project builds on the open-source
+[YJDoc2/8086-Emulator](https://github.com/YJDoc2/8086-Emulator) work; the
+original attribution and licenses are preserved in
+[License & Attribution](#-license--attribution) below — this repository is
+where you write, run and study assembly programs.
 
 ---
 

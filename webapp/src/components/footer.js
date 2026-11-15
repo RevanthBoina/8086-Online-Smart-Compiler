@@ -56,41 +56,23 @@ function Footer() {
       >
         <Toolbar className={classes.footerToolbar}>
           <div align="center" className={classes.root}>
-            &#169; Reserved | Developed by • 
+            &#169; Reserved | Developed by •{" "}
             <a
-              href="https://github.com/YJDoc2"
+              href="https://github.com/RevanthBoina"
               target="_blank"
               rel="noreferrer"
               className={classes.link}
             >
-              Yashodhan Joshi
+              Revanth Boina
             </a>{" "}
-            • 
+            •{" "}
             <a
-              href="https://github.com/YatharthVyas"
+              href="https://github.com/dhanushkumar565"
               target="_blank"
               rel="noreferrer"
               className={classes.link}
             >
-              Yatharth Vyas
-            </a>{" "}
-            • 
-            <a
-              href="https://github.com/Tejas988"
-              target="_blank"
-              rel="noreferrer"
-              className={classes.link}
-            >
-              Tejas Ghone
-            </a>{" "}
-            • 
-            <a
-              href="https://github.com/Vatsalsoni13"
-              target="_blank"
-              rel="noreferrer"
-              className={classes.link}
-            >
-              Vatsal Soni
+              Dhanush Kumar Yerramreddy
             </a>
           </div>
         </Toolbar>

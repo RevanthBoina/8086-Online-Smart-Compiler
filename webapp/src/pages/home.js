@@ -100,22 +100,12 @@ function Home() {
                 <br />
                 Open Source :{" "}
                 <a
-                  href="https://github.com/YJDoc2/8086-Emulator-Web/"
+                  href="https://github.com/RevanthBoina/8086-Online-Smart-Compiler"
                   target="_blank"
                   rel="noreferrer"
                   className={classes.link}
                 >
-                  Github Repository
-                </a>
-                <br />
-                Also in{" "}
-                <a
-                  href="https://github.com/YJDoc2/8086-Emulator/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className={classes.link}
-                >
-                  Command line version
+                  GitHub Repository
                 </a>
                 <br />
                 Made Using React, WASM and Rust.
